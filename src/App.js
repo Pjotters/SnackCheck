@@ -117,7 +117,7 @@ const LoginForm = ({ onLogin }) => {
         </form>
 
         <div className="mt-6 text-center text-sm text-gray-500">
-          <p>Geen account? Vraag je docent om een account aan te maken</p>
+          <p>Geen account? Vraag de admins om een account aan te maken via: 124174@chrlyceumdelft.nl</p>
         </div>
       </div>
     </div>
