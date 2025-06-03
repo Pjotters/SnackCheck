@@ -1,5 +1,5 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, File, UploadFile, Form, BackgroundTasks
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordBearer
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
@@ -168,6 +168,7 @@ app = FastAPI(title="SnackCheck Research Platform", version="3.0.0")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 
 # Security
 security = HTTPBearer()
@@ -255,6 +256,19 @@ class FoodEntry(BaseModel):
     points_earned: int = 0
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
+class Gallery(BaseModel):
+    id: str
+    user_id: str
+    username: str
+    food_name: str
+    image_url: str
+    ai_score: float # Assuming ai_score can be float
+    likes: int
+    created_at: str # ISO format string
+
+class CalorieCheckRequest(BaseModel):
+    food_item: str
+
 class CalorieCheck(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
@@ -281,6 +295,14 @@ class ChatMessage(BaseModel):
     is_admin: bool = False
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
+class DailyQuestionCreate(BaseModel):
+    question: str
+    options: List[str]
+    date: str  # Expecting YYYY-MM-DD format
+    active: bool = True
+    points_reward: int = 5
+
+
 class DailyQuestion(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     question: str
@@ -300,6 +322,22 @@ class QuestionResponse(BaseModel):
 class QuestionResponseCreate(BaseModel):
     question_id: str
     answer: str
+
+class FeedbackCreate(BaseModel):
+    feedback_text: str
+    category: Optional[str] = None
+
+class Feedback(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    username: str
+    feedback_text: str
+    category: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AdminUpdatePointsRequest(BaseModel):
+    new_points: int
 
 class Gallery(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -636,7 +674,161 @@ def save_food_entries(food_entries):
     except IOError as e:
         print(f"Error writing to {FOOD_ENTRIES_FILE}: {e}")
 
-@app.post("/login")
+GALLERY_ITEMS_FILE = "gallery_items.json"
+
+def load_gallery_items():
+    if not os.path.exists(GALLERY_ITEMS_FILE):
+        with open(GALLERY_ITEMS_FILE, 'w') as f:
+            json.dump([], f) # Create empty list if file doesn't exist
+        return []
+    try:
+        with open(GALLERY_ITEMS_FILE, 'r') as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading or parsing {GALLERY_ITEMS_FILE}: {e}")
+        return []
+
+def save_gallery_items(gallery_items):
+    try:
+        with open(GALLERY_ITEMS_FILE, 'w') as f:
+            json.dump(gallery_items, f, indent=2)
+    except IOError as e:
+        print(f"Error writing to {GALLERY_ITEMS_FILE}: {e}")
+
+CALORIE_CHECKS_FILE = "calorie_checks.json"
+
+def load_calorie_checks():
+    if not os.path.exists(CALORIE_CHECKS_FILE):
+        with open(CALORIE_CHECKS_FILE, 'w') as f:
+            json.dump([], f)
+        return []
+    try:
+        with open(CALORIE_CHECKS_FILE, 'r') as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading or parsing {CALORIE_CHECKS_FILE}: {e}")
+        return []
+
+def save_calorie_checks(checks):
+    try:
+        with open(CALORIE_CHECKS_FILE, 'w') as f:
+            json.dump(checks, f, indent=2)
+    except IOError as e:
+        print(f"Error writing to {CALORIE_CHECKS_FILE}: {e}")
+
+FOOD_COMPARISONS_FILE = "food_comparisons.json"
+
+def load_food_comparisons():
+    if not os.path.exists(FOOD_COMPARISONS_FILE):
+        with open(FOOD_COMPARISONS_FILE, 'w') as f:
+            json.dump([], f)
+        return []
+    try:
+        with open(FOOD_COMPARISONS_FILE, 'r') as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading or parsing {FOOD_COMPARISONS_FILE}: {e}")
+        return []
+
+def save_food_comparisons(comparisons):
+    try:
+        with open(FOOD_COMPARISONS_FILE, 'w') as f:
+            json.dump(comparisons, f, indent=2)
+    except IOError as e:
+        print(f"Error writing to {FOOD_COMPARISONS_FILE}: {e}")
+
+CHAT_MESSAGES_FILE = "chat_messages.json"
+
+def load_chat_messages():
+    if not os.path.exists(CHAT_MESSAGES_FILE):
+        with open(CHAT_MESSAGES_FILE, 'w') as f:
+            json.dump([], f)
+        return []
+    try:
+        with open(CHAT_MESSAGES_FILE, 'r') as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading or parsing {CHAT_MESSAGES_FILE}: {e}")
+        return []
+
+def save_chat_messages(messages):
+    try:
+        with open(CHAT_MESSAGES_FILE, 'w') as f:
+            json.dump(messages, f, indent=2)
+    except IOError as e:
+        print(f"Error writing to {CHAT_MESSAGES_FILE}: {e}")
+
+DAILY_QUESTIONS_FILE = "daily_questions.json"
+
+def load_daily_questions():
+    if not os.path.exists(DAILY_QUESTIONS_FILE):
+        with open(DAILY_QUESTIONS_FILE, 'w') as f:
+            json.dump([], f)
+        return []
+    try:
+        with open(DAILY_QUESTIONS_FILE, 'r') as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading or parsing {DAILY_QUESTIONS_FILE}: {e}")
+        return []
+
+def save_daily_questions(questions):
+    try:
+        with open(DAILY_QUESTIONS_FILE, 'w') as f:
+            json.dump(questions, f, indent=2)
+    except IOError as e:
+        print(f"Error writing to {DAILY_QUESTIONS_FILE}: {e}")
+
+QUESTION_RESPONSES_FILE = "question_responses.json"
+
+def load_question_responses():
+    if not os.path.exists(QUESTION_RESPONSES_FILE):
+        with open(QUESTION_RESPONSES_FILE, 'w') as f:
+            json.dump([], f)
+        return []
+    try:
+        with open(QUESTION_RESPONSES_FILE, 'r') as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading or parsing {QUESTION_RESPONSES_FILE}: {e}")
+        return []
+
+def save_question_responses(responses):
+    try:
+        with open(QUESTION_RESPONSES_FILE, 'w') as f:
+            json.dump(responses, f, indent=2)
+    except IOError as e:
+        print(f"Error writing to {QUESTION_RESPONSES_FILE}: {e}")
+
+FEEDBACK_ITEMS_FILE = "feedback_items.json"
+
+def load_feedback_items():
+    if not os.path.exists(FEEDBACK_ITEMS_FILE):
+        with open(FEEDBACK_ITEMS_FILE, 'w') as f:
+            json.dump([], f)
+        return []
+    try:
+        with open(FEEDBACK_ITEMS_FILE, 'r') as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading or parsing {FEEDBACK_ITEMS_FILE}: {e}")
+        return []
+
+def save_feedback_items(feedback_items):
+    try:
+        with open(FEEDBACK_ITEMS_FILE, 'w') as f:
+            json.dump(feedback_items, f, indent=2)
+    except IOError as e:
+        print(f"Error writing to {FEEDBACK_ITEMS_FILE}: {e}")
+
+@api_router.post("/login")
 async def login_user(login_data: UserLogin): # Removed db_session and related imports for this function
     users = load_users()
     found_user = None
@@ -727,6 +919,24 @@ async def create_food_entry(
     all_food_entries.append(food_entry_data)
     save_food_entries(all_food_entries)
 
+    # Add to gallery if image exists and score is high enough
+    # Ensure GALLERY_SCORE_THRESHOLD is defined, e.g., GALLERY_SCORE_THRESHOLD = 6
+    GALLERY_SCORE_THRESHOLD = 6 # Define threshold here or globally
+    if food_entry_data.get("image_url") and food_entry_data.get("ai_score", 0) >= GALLERY_SCORE_THRESHOLD:
+        gallery_item_data = {
+            "id": str(uuid.uuid4()),
+            "user_id": current_user.id,
+            "username": current_user.username,
+            "food_name": food_entry_data["food_name"],
+            "image_url": food_entry_data["image_url"],
+            "ai_score": food_entry_data["ai_score"],
+            "likes": 0,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        all_gallery_items = load_gallery_items()
+        all_gallery_items.append(gallery_item_data)
+        save_gallery_items(all_gallery_items)
+
     all_users = load_users()
     user_found_for_update = False
     for i, u_data in enumerate(all_users):
@@ -749,226 +959,386 @@ async def create_food_entry(
     return response_data
 
 @api_router.get("/food-entries")
-async def get_user_food_entries(current_user: User = Depends(get_current_user), db_session: AsyncSession = Depends(get_db)) -> List[FoodEntry]:
-    # This endpoint still uses SQLAlchemy and needs to be migrated later
-    result = await db_session.execute(
-        select(FoodEntryDb)
-        .where(FoodEntryDb.user_id == current_user.id)
-        .order_by(FoodEntryDb.timestamp.desc())
-        .limit(100)
-    )
-    entries_db = result.scalars().all()
-    return [FoodEntry.model_validate(entry) for entry in entries_db]
+async def get_user_food_entries(current_user: User = Depends(get_current_user)) -> List[FoodEntry]:
+    all_food_entries = load_food_entries()
+    user_entries = []
+    for entry_data in all_food_entries:
+        if entry_data.get("user_id") == current_user.id:
+            # Ensure the structure of entry_data matches FoodEntry Pydantic model
+            # If not, you might need to transform it or adjust FoodEntry model
+            try:
+                user_entries.append(FoodEntry.model_validate(entry_data))
+            except Exception as e:
+                print(f"Error validating food entry data for user {current_user.id}: {e} - Data: {entry_data}")
+                # Decide how to handle: skip this entry, raise error, etc.
+    
+    # Optional: sort entries by date, similar to the original query
+    # Assuming 'created_at' is an ISO format string that can be sorted lexicographically for recent first
+    user_entries.sort(key=lambda x: x.created_at, reverse=True)
+    
+    # Optional: limit the number of entries, similar to the original query
+    return user_entries[:100] # Return up to 100 most recent entries
 
 @api_router.get("/food-entries/all")
-async def get_all_food_entries(current_user: User = Depends(get_current_user), db_session: AsyncSession = Depends(get_db)) -> List[FoodEntry]:
-    # This endpoint still uses SQLAlchemy and needs to be migrated later
+async def get_all_food_entries(current_user: User = Depends(get_current_user)) -> List[FoodEntry]:
     # Only admin and teachers can see all entries
     if current_user.role not in [USER_ROLES["ADMIN"], USER_ROLES["TEACHER"]]:
         raise HTTPException(status_code=403, detail="Access denied")
+
+    all_food_entries_data = load_food_entries()
     
-    # Admin sees everything, teachers see limited data
-    if current_user.role == USER_ROLES["ADMIN"]:
-        result = await db_session.execute(
-            select(FoodEntryDb)
-            .order_by(FoodEntryDb.timestamp.desc())
-            .limit(1000) # Consider pagination for very large datasets
-        )
-        entries_db = result.scalars().all()
-        return [FoodEntry.model_validate(entry) for entry in entries_db]
-    else: # Teacher role
-        result = await db_session.execute(
-            select(FoodEntryDb)
-            .order_by(FoodEntryDb.timestamp.desc())
-            .limit(1000) # Consider pagination
-        )
-        entries_db = result.scalars().all()
-        teacher_entries_response = []
-        for entry_db in entries_db:
-            pydantic_entry = FoodEntry.model_validate(entry_db)
-            pydantic_entry.user_id = "hidden" # Anonymize user_id for teachers
-            # Optionally nullify or anonymize other sensitive fields for teacher view
-            # e.g., pydantic_entry.ai_feedback = None 
-            teacher_entries_response.append(pydantic_entry)
-        return teacher_entries_response
+    # Sort all entries by date, recent first
+    # Assuming 'created_at' is an ISO format string
+    all_food_entries_data.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    
+    # Limit the number of entries (e.g., to the most recent 1000)
+    limited_entries_data = all_food_entries_data[:1000]
+
+    processed_entries = []
+    for entry_data in limited_entries_data:
+        try:
+            pydantic_entry = FoodEntry.model_validate(entry_data)
+            if current_user.role == USER_ROLES["TEACHER"]:
+                pydantic_entry.user_id = "hidden" # Anonymize user_id for teachers
+                # Optionally nullify or anonymize other sensitive fields for teacher view:
+                # pydantic_entry.ai_feedback = None 
+                # pydantic_entry.username = "hidden" # If username is present and needs hiding
+            processed_entries.append(pydantic_entry)
+        except Exception as e:
+            print(f"Error validating food entry data for /all endpoint: {e} - Data: {entry_data}")
+            # Decide how to handle: skip this entry, raise error, etc.
+            
+    return processed_entries
 @api_router.get("/gallery")
-async def get_gallery(current_user: User = Depends(get_current_user), db_session: AsyncSession = Depends(get_db)) -> List[Gallery]:
-    result = await db_session.execute(
-        select(GalleryDb)
-        .order_by(GalleryDb.timestamp.desc())
-        .limit(50)
-    )
-    gallery_items_db = result.scalars().all()
-    return [Gallery.model_validate(item) for item in gallery_items_db]
+async def get_gallery(current_user: User = Depends(get_current_user)) -> List[Gallery]:
+    all_gallery_items_data = load_gallery_items()
+    
+    # Sort by 'created_at' in descending order (recent first)
+    # Assuming 'created_at' is an ISO format string that can be sorted lexicographically
+    all_gallery_items_data.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    
+    # Limit to the most recent 50 items
+    limited_gallery_data = all_gallery_items_data[:50]
+    
+    # Validate and convert to Pydantic models
+    gallery_items_response = []
+    for item_data in limited_gallery_data:
+        try:
+            gallery_items_response.append(Gallery.model_validate(item_data))
+        except Exception as e:
+            print(f"Error validating gallery item data: {e} - Data: {item_data}")
+            # Optionally, decide to skip this item or handle error differently
+            
+    return gallery_items_response
 
 @api_router.post("/gallery/{item_id}/like")
-async def like_gallery_item(item_id: str, current_user: User = Depends(get_current_user), db_session: AsyncSession = Depends(get_db)):
-    result = await db_session.execute(select(GalleryDb).where(GalleryDb.id == item_id))
-    gallery_item_db = result.scalars().first()
+async def like_gallery_item(item_id: str, current_user: User = Depends(get_current_user)):
+    all_gallery_items = load_gallery_items()
+    item_found = False
+    updated_likes = 0
+
+    for item in all_gallery_items:
+        if item.get("id") == item_id:
+            item["likes"] = item.get("likes", 0) + 1
+            updated_likes = item["likes"]
+            item_found = True
+            break
     
-    if not gallery_item_db:
+    if not item_found:
         raise HTTPException(status_code=404, detail="Gallery item not found")
     
-    gallery_item_db.likes += 1
-    # db_session.add(gallery_item_db) # Not strictly necessary as the object is already in session and tracked
-    try:
-        await db_session.commit()
-        await db_session.refresh(gallery_item_db) # Optional: refresh to get the latest state if needed by client
-    except IntegrityError: # Should not happen for a simple increment
-        await db_session.rollback()
-        raise HTTPException(status_code=500, detail="Database error while liking item.")
-
-    return {"message": "Liked successfully", "likes": gallery_item_db.likes}
+    save_gallery_items(all_gallery_items)
+    
+    return {"message": "Like registered successfully", "item_id": item_id, "likes": updated_likes}
 
 # Chat system
 @api_router.post("/chat/send")
 async def send_chat_message(
     message: str = Form(...),
-    current_user: User = Depends(get_current_user),
-    db_session: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user)
 ) -> ChatMessage:
-    new_chat_message_db = ChatMessageDb(
-        user_id=current_user.id,
-        username=current_user.username,
-        class_code=current_user.class_code,  # Added class_code
-        message=message,
-        is_admin=current_user.role == USER_ROLES["ADMIN"]
-        # id and timestamp have defaults
-    )
+    chat_message_data = {
+        "id": str(uuid.uuid4()),
+        "user_id": current_user.id,
+        "username": current_user.username,
+        "class_code": current_user.class_code,
+        "message": message,
+        "is_admin": current_user.role == USER_ROLES["ADMIN"],
+        "timestamp": datetime.now(timezone.utc).isoformat() # Store as ISO string
+    }
     
-    db_session.add(new_chat_message_db)
+    all_messages = load_chat_messages()
+    all_messages.append(chat_message_data)
+    save_chat_messages(all_messages)
+    
+    # Validate data before returning, ensuring it matches Pydantic model (especially timestamp)
+    # The Pydantic model ChatMessage expects a datetime object for timestamp if not changed.
+    # We need to ensure ChatMessage Pydantic model expects a string for timestamp or convert here.
+    # For consistency with other JSON-stored models, let's assume ChatMessage.timestamp is also string.
+    # If ChatMessage.timestamp is datetime, then: validated_message = ChatMessage.model_validate(chat_message_data)
+    # and ensure Pydantic model handles string to datetime conversion if necessary or change model field to str.
+    
+    # Assuming ChatMessage Pydantic model's timestamp field is string or handles string conversion:
     try:
-        await db_session.commit()
-        await db_session.refresh(new_chat_message_db)
-    except IntegrityError:
-        await db_session.rollback()
-        raise HTTPException(status_code=500, detail="Database error while sending message.")
-    
-    return ChatMessage.model_validate(new_chat_message_db)
+        validated_message = ChatMessage.model_validate(chat_message_data)
+        return validated_message
+    except Exception as e:
+        print(f"Error validating chat message data: {e} - Data: {chat_message_data}")
+        # This case should ideally not happen if data is constructed correctly
+        raise HTTPException(status_code=500, detail="Error processing chat message after saving.")
 
 @api_router.get("/chat/messages")
-async def get_chat_messages(current_user: User = Depends(get_current_user), db_session: AsyncSession = Depends(get_db)) -> List[ChatMessage]:
-    if current_user.role == USER_ROLES["ADMIN"]:
-        # Admins see all messages from all classes, sorted by most recent
-        stmt = select(ChatMessageDb).order_by(ChatMessageDb.timestamp.desc()).limit(100)
-    else:
-        # Regular users/teachers see messages from their own class, sorted by most recent
-        stmt = (
-            select(ChatMessageDb)
-            .where(ChatMessageDb.class_code == current_user.class_code)
-            .order_by(ChatMessageDb.timestamp.desc())
-            .limit(100)
-        )
+async def get_chat_messages(current_user: User = Depends(get_current_user)) -> List[ChatMessage]:
+    all_messages_data = load_chat_messages()
     
-    result = await db_session.execute(stmt)
-    messages_db = result.scalars().all()
-    return [ChatMessage.model_validate(msg) for msg in messages_db]
+    filtered_messages = []
+    if current_user.role == USER_ROLES["ADMIN"]:
+        filtered_messages = all_messages_data
+    else:
+        for msg_data in all_messages_data:
+            if msg_data.get("class_code") == current_user.class_code:
+                filtered_messages.append(msg_data)
+    
+    # Sort messages by timestamp (descending - recent first)
+    # Assumes timestamp is an ISO string that can be sorted lexicographically
+    filtered_messages.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    
+    # Limit to the most recent 100 messages
+    limited_messages_data = filtered_messages[:100]
+    
+    # Validate and convert to Pydantic models
+    response_messages = []
+    for msg_data in limited_messages_data:
+        try:
+            response_messages.append(ChatMessage.model_validate(msg_data))
+        except Exception as e:
+            print(f"Error validating chat message data for GET /chat/messages: {e} - Data: {msg_data}")
+            # Optionally, decide to skip this item or handle error differently
+            
+    return response_messages
+
+# Calorie Checker & Food Comparison Endpoints
+@api_router.post("/calorie-check", response_model=Dict) # Assuming the analysis result is a Dict
+async def check_calories(request: CalorieCheckRequest, current_user: User = Depends(get_current_user)):
+    food_item_name = request.food_item
+    
+    try:
+        # Call the existing HuggingFace analysis function
+        # This function might need to be adapted if its output isn't directly what's needed
+        analysis_result = await analyze_food_with_huggingface(food_item_name)
+    except Exception as e:
+        # Log the exception e
+        print(f"Error during HuggingFace analysis for {food_item_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error analyzing food item: {e}")
+
+    calorie_check_data = {
+        "id": str(uuid.uuid4()),
+        "user_id": current_user.id,
+        "food_item": food_item_name,
+        "result": analysis_result, # Store the full analysis
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    
+    all_checks = load_calorie_checks()
+    all_checks.append(calorie_check_data)
+    save_calorie_checks(all_checks)
+    
+    return analysis_result # Return the analysis part to the user
+
+
+class FoodCompareRequest(BaseModel):
+    food_item1: str
+    food_item2: str
+
+@api_router.post("/food-compare", response_model=Dict) # Assuming the response is a Dict containing both analyses
+async def compare_foods(request: FoodCompareRequest, current_user: User = Depends(get_current_user)):
+    food1_name = request.food_item1
+    food2_name = request.food_item2
+    
+    try:
+        analysis1_result = await analyze_food_with_huggingface(food1_name)
+    except Exception as e:
+        print(f"Error during HuggingFace analysis for {food1_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error analyzing {food1_name}: {e}")
+
+    try:
+        analysis2_result = await analyze_food_with_huggingface(food2_name)
+    except Exception as e:
+        print(f"Error during HuggingFace analysis for {food2_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error analyzing {food2_name}: {e}")
+
+    # For now, the comparison_result will just be a container for both analyses
+    # More sophisticated comparison logic could be added here later.
+    comparison_data_to_store = {
+        "id": str(uuid.uuid4()),
+        "user_id": current_user.id,
+        "food_1_name": food1_name,
+        "food_2_name": food2_name,
+        "food_1_analysis": analysis1_result,
+        "food_2_analysis": analysis2_result,
+        "comparison_summary": f"Comparison between {food1_name} and {food2_name}.", # Basic summary
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    
+    all_comparisons = load_food_comparisons()
+    all_comparisons.append(comparison_data_to_store)
+    save_food_comparisons(all_comparisons)
+    
+    return {
+        "food_1_name": food1_name,
+        "food_1_analysis": analysis1_result,
+        "food_2_name": food2_name,
+        "food_2_analysis": analysis2_result,
+        "comparison_summary": comparison_data_to_store["comparison_summary"]
+    }
 
 # Daily questions endpoints
 @api_router.post("/daily-questions")
-async def create_daily_question(question_data: DailyQuestion, current_user: User = Depends(get_current_user), db_session: AsyncSession = Depends(get_db)) -> DailyQuestion:
+async def create_daily_question(question_input: DailyQuestion, current_user: User = Depends(get_current_user)) -> DailyQuestion:
     if current_user.role != USER_ROLES["ADMIN"]:
-        raise HTTPException(status_code=403, detail="Only admin can create questions")
-    
-    new_question_db = DailyQuestionDb(
-        question_text=question_data.question_text,
-        date=question_data.date, # Assuming date is already in 'YYYY-MM-DD' string format from Pydantic
-        points_reward=question_data.points_reward,
-        active=question_data.active
-        # id will be generated
-    )
-    db_session.add(new_question_db)
-    try:
-        await db_session.commit()
-        await db_session.refresh(new_question_db)
-    except IntegrityError:
-        await db_session.rollback()
-        raise HTTPException(status_code=500, detail="Database error creating daily question.")
-    return DailyQuestion.model_validate(new_question_db)
+        raise HTTPException(status_code=403, detail="Only admins can create daily questions.")
+
+    all_questions = load_daily_questions()
+
+    # Check for date uniqueness
+    for q_data in all_questions:
+        # Compare date part of stored ISO string with input date object
+        if date.fromisoformat(q_data['date']) == question_input.date:
+            raise HTTPException(status_code=400, detail=f"A question for the date {question_input.date.isoformat()} already exists.")
+
+    # Deactivate other active questions if this one is active
+    if question_input.is_active:
+        for q_data in all_questions:
+            q_data['is_active'] = False
+
+    # Prepare data for JSON storage, using Pydantic model defaults where appropriate
+    # and converting date/datetime to ISO strings.
+    new_question_data = {
+        "id": question_input.id, # Use ID from Pydantic model (default_factory)
+        "question_text": question_input.question_text,
+        "date": question_input.date.isoformat(),
+        "is_active": question_input.is_active,
+        "created_by_user_id": current_user.id, # Explicitly set creator
+        "created_at": question_input.created_at.isoformat() # Use datetime from Pydantic model (default_factory)
+    }
+
+    all_questions.append(new_question_data)
+    save_daily_questions(all_questions)
+
+    # Return the validated Pydantic model. Pydantic will parse ISO strings back to date/datetime.
+    # The input `question_input` can be returned after setting `created_by_user_id` if preferred,
+    # but constructing from `new_question_data` ensures what's returned matches what's stored.
+    return DailyQuestion.model_validate(new_question_data)
 
 @api_router.get("/daily-questions/today")
-async def get_todays_questions(db_session: AsyncSession = Depends(get_db)) -> List[DailyQuestion]:
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    # Assuming DailyQuestionDb.date is stored as String or Date type compatible with string comparison
-    result = await db_session.execute(
-        select(DailyQuestionDb)
-        .where(DailyQuestionDb.date == today_str, DailyQuestionDb.active == True)
-        .limit(10) # Keep limit if multiple questions per day are possible
-    )
-    questions_db = result.scalars().all()
-    return [DailyQuestion.model_validate(q) for q in questions_db]
-
+async def get_todays_questions() -> List[DailyQuestion]: # Removed db_session
+    today_date_obj = date.today() # Get today as a date object
+    all_questions_data = load_daily_questions()
+    
+    todays_active_questions_data = []
+    for q_data in all_questions_data:
+        question_date_obj = date.fromisoformat(q_data.get("date", "")) # Parse stored ISO string to date object
+        if question_date_obj == today_date_obj and q_data.get("is_active", False):
+            todays_active_questions_data.append(q_data)
+            
+    # Limit to 10, consistent with original logic, though ideally only one is active per day
+    limited_questions_data = todays_active_questions_data[:10]
+    
+    response_questions = []
+    for q_data in limited_questions_data:
+        try:
+            response_questions.append(DailyQuestion.model_validate(q_data))
+        except Exception as e:
+            print(f"Error validating daily question data for GET /daily-questions/today: {e} - Data: {q_data}")
+            # Optionally skip this item
+            
 @api_router.post("/question-responses")
 async def submit_question_response(
     response_data: QuestionResponseCreate,
-    current_user: User = Depends(get_current_user),
-    db_session: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user)
 ) -> QuestionResponse:
-    # Check if user already answered this question
-    existing_response_result = await db_session.execute(
-        select(QuestionResponseDb).where(
-            QuestionResponseDb.user_id == current_user.id,
-            QuestionResponseDb.question_id == response_data.question_id
-        )
-    )
-    existing_response_db = existing_response_result.scalars().first()
-    
-    if existing_response_db:
-        raise HTTPException(status_code=400, detail="Already answered this question")
-    
-    # Get question to determine points
-    question_result = await db_session.execute(
-        select(DailyQuestionDb).where(DailyQuestionDb.id == response_data.question_id)
-    )
-    question_db = question_result.scalars().first()
-    points_earned = question_db.points_reward if question_db else 5
-    
-    new_response_db = QuestionResponseDb(
-        user_id=current_user.id,
-        question_id=response_data.question_id,
-        answer=response_data.answer,
-        points_earned=points_earned
-        # id and timestamp have defaults
-    )
-    db_session.add(new_response_db)
-    
-    # Update user points
-    user_to_update_result = await db_session.execute(select(UserDb).where(UserDb.id == current_user.id))
-    user_to_update_db = user_to_update_result.scalars().first()
-    if not user_to_update_db:
-        # Should not happen if current_user is valid
-        await db_session.rollback() # Rollback the response addition
-        raise HTTPException(status_code=404, detail="User not found for points update.")
+    all_responses = load_question_responses()
 
-    user_to_update_db.points += points_earned
-    user_to_update_db.level = check_level_up(user_to_update_db.points)
-    # db_session.add(user_to_update_db) # Already tracked
+    # Check if user already answered this question
+    for resp in all_responses:
+        if resp.get("user_id") == current_user.id and resp.get("question_id") == response_data.question_id:
+            raise HTTPException(status_code=400, detail="You have already answered this question.")
+
+    # Check if the question exists
+    all_questions = load_daily_questions()
+    target_question = next((q for q in all_questions if q.get("id") == response_data.question_id), None)
+    if not target_question:
+        raise HTTPException(status_code=404, detail="Question not found.")
+
+    # Points logic: Fixed points for now, as DailyQuestion Pydantic model lacks points_reward
+    points_earned = 5 
+
+    # Update user points and streak in users.json
+    users = load_users()
+    user_found_for_update = False
+    for user_dict in users:
+        if user_dict.get("id") == current_user.id:
+            user_dict["points"] = user_dict.get("points", 0) + points_earned
+            # Simple streak increment; more complex logic (e.g., daily check) would require more state
+            user_dict["streak"] = user_dict.get("streak", 0) + 1 
+            user_found_for_update = True
+            break
+    if user_found_for_update:
+        save_users(users)
+    else:
+        # This should ideally not happen if current_user is valid
+        print(f"Warning: User with ID {current_user.id} not found in users.json for point update.")
+
+    new_response_data = {
+        "id": str(uuid.uuid4()),
+        "question_id": response_data.question_id,
+        "user_id": current_user.id,
+        "username": current_user.username,
+        "response_text": response_data.response_text,
+        "class_code": current_user.class_code,
+        "points_earned": points_earned,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+    all_responses.append(new_response_data)
+    save_question_responses(all_responses)
 
     try:
-        await db_session.commit()
-        await db_session.refresh(new_response_db)
-        await db_session.refresh(user_to_update_db)
-    except IntegrityError:
-        await db_session.rollback()
-        raise HTTPException(status_code=500, detail="Database error submitting response.")
-    
-    return QuestionResponse.model_validate(new_response_db)
+        validated_response = QuestionResponse.model_validate(new_response_data)
+        return validated_response
+    except Exception as e:
+        print(f"Error validating question response data: {e} - Data: {new_response_data}")
+        raise HTTPException(status_code=500, detail="Error processing response after saving.")
 
 @api_router.get("/daily-questions/responses/{question_id}")
-async def get_responses_for_question(question_id: str, current_user: User = Depends(get_current_user), db_session: AsyncSession = Depends(get_db)) -> List[QuestionResponse]:
+async def get_responses_for_question(question_id: str, current_user: User = Depends(get_current_user)) -> List[QuestionResponse]:
     # Authorization: Only admin or teacher can see all responses for a question
     if current_user.role not in [USER_ROLES["ADMIN"], USER_ROLES["TEACHER"]]:
         # Optionally, allow users to see responses if they've answered, or if the question is 'closed'
         # For now, restricting to admin/teacher for simplicity
         raise HTTPException(status_code=403, detail="Access denied. Admin or teacher role required.")
 
-    result = await db_session.execute(
-        select(QuestionResponseDb)
-        .where(QuestionResponseDb.question_id == question_id)
-        .order_by(QuestionResponseDb.timestamp.asc()) # Show in order of submission
-    )
-    responses_db = result.scalars().all()
-    return [QuestionResponse.model_validate(response) for response in responses_db]
+    all_responses_data = load_question_responses()
+    
+    question_specific_responses = []
+    for resp_data in all_responses_data:
+        if resp_data.get("question_id") == question_id:
+            question_specific_responses.append(resp_data)
+            
+    # Sort responses by timestamp (ascending - oldest first)
+    # Assumes timestamp is an ISO string that can be sorted lexicographically
+    question_specific_responses.sort(key=lambda x: x.get("timestamp", ""))
+    
+    # Validate and convert to Pydantic models
+    validated_responses = []
+    for resp_data in question_specific_responses:
+        try:
+            validated_responses.append(QuestionResponse.model_validate(resp_data))
+        except Exception as e:
+            print(f"Error validating question response data for GET /daily-questions/responses: {e} - Data: {resp_data}")
+            # Optionally, decide to skip this item or handle error differently
+            
+    return validated_responses
 
 # Analytics endpoints
 @api_router.get("/analytics/class-summary", response_model=List[ClassSummaryStat])
@@ -1081,133 +1451,332 @@ async def get_leaderboard(current_user: User = Depends(get_current_user), db_ses
 @api_router.post("/admin/create-user")
 async def admin_create_user(
     user_data: UserCreate,
-    current_user: User = Depends(get_current_user),
-    db_session: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user)
 ):
     if current_user.role != USER_ROLES["ADMIN"]:
         raise HTTPException(status_code=403, detail="Admin access required")
-    
-    # Check if username already exists
-    result = await db_session.execute(
-        select(UserDb).where(
-            UserDb.username == user_data.username,
-            UserDb.class_code == user_data.class_code.upper() # Ensure class_code is compared in upper case
-        )
-    )
-    existing_user_db = result.scalars().first()
-    if existing_user_db:
-        raise HTTPException(status_code=400, detail="Username already exists in this class")
-    
+
+    all_users = load_users()
+    class_code_upper = user_data.class_code.upper()
+
+    # Check if username already exists in this class
+    for existing_user in all_users:
+        if existing_user.get("username") == user_data.username and \
+           existing_user.get("class_code") == class_code_upper:
+            raise HTTPException(status_code=400, detail="Username already exists in this class")
+
     # Determine role from class code or use provided role
-    role = user_data.role or get_role_from_class_code(user_data.class_code)
+    role = user_data.role or get_role_from_class_code(class_code_upper)
     if not role:
-        raise HTTPException(status_code=400, detail="Invalid class code or role")
-    
-    # Create user
-    new_user_db = UserDb(
-        username=user_data.username,
-        password_hash=hash_password(user_data.password),
-        class_code=user_data.class_code.upper(),
-        role=role
-        # id will be generated by default_factory
-        # points, level, badges, streak_days, last_entry_date, created_at have defaults
-    )
-    
-    db_session.add(new_user_db)
-    try:
-        await db_session.commit()
-        await db_session.refresh(new_user_db)
-    except IntegrityError: # Catch potential race conditions or other integrity issues
-        await db_session.rollback()
-        raise HTTPException(status_code=400, detail="Could not create user due to a database error.")
-    
+        raise HTTPException(status_code=400, detail="Invalid class code or role not determinable")
+
+    # Create new user dictionary
+    new_user_id = str(uuid.uuid4())
+    new_user_entry = {
+        "id": new_user_id,
+        "username": user_data.username,
+        "password_hash": get_password_hash(user_data.password), # Use the correct hashing function
+        "class_code": class_code_upper,
+        "role": role,
+        "points": 0,
+        "level": 1,
+        "badges": [],
+        "streak_days": 0,
+        "last_entry_date": None, # Stored as string or None
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "is_active": True,
+        "daily_calorie_goal_override": None,
+        "daily_protein_goal_override": None
+    }
+
+    all_users.append(new_user_entry)
+    save_users(all_users)
+
+    # Return a subset of user info, similar to original, excluding password_hash
     return {
         "message": "User created successfully",
         "user": {
-            "id": new_user_db.id,
-            "username": new_user_db.username,
-            "class_code": new_user_db.class_code,
-            "role": new_user_db.role
+            "id": new_user_id,
+            "username": new_user_entry["username"],
+            "class_code": new_user_entry["class_code"],
+            "role": new_user_entry["role"]
         }
     }
 
-@api_router.get("/admin/users")
-async def admin_get_users(current_user: User = Depends(get_current_user), db_session: AsyncSession = Depends(get_db)):
+
+@api_router.post("/admin/users/{user_id}/reset-points-streak", response_model=User)
+async def admin_reset_user_points_streak(
+    user_id: str,
+    current_user: User = Depends(get_current_user)
+) -> User:
+    if current_user.role != USER_ROLES["ADMIN"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+    all_users = load_users()
+    user_to_update = None
+    user_index = -1
+
+    for i, u in enumerate(all_users):
+        if u.get("id") == user_id:
+            user_to_update = u
+            user_index = i
+            break
+
+    if not user_to_update:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user_to_update["points"] = 0
+    user_to_update["streak_days"] = 0
+    # Potentially also reset level if it's derived from points, or last_entry_date if streak is reset
+    # For now, only points and streak_days as per direct request.
+
+    all_users[user_index] = user_to_update
+    save_users(all_users)
+
+    try:
+        # Validate the updated user data before returning
+        updated_user_model = User.model_validate(user_to_update)
+        return updated_user_model
+    except Exception as e:
+        print(f"Error validating user data after reset: {e} - Data: {user_to_update}")
+        # This should ideally not happen if the structure is maintained correctly
+        raise HTTPException(status_code=500, detail="Error processing user data after reset.")
+
+
+@api_router.post("/admin/users/{user_id}/update-points", response_model=User)
+async def admin_update_user_points(
+    user_id: str,
+    points_data: AdminUpdatePointsRequest,
+    current_user: User = Depends(get_current_user)
+) -> User:
+    if current_user.role != USER_ROLES["ADMIN"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+
+    all_users = load_users()
+    user_to_update = None
+    user_index = -1
+
+    for i, u in enumerate(all_users):
+        if u.get("id") == user_id:
+            user_to_update = u
+            user_index = i
+            break
+
+    if not user_to_update:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if points_data.new_points < 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Points cannot be negative.")
+
+    user_to_update["points"] = points_data.new_points
+    # Note: Level is not automatically recalculated here. This might be a future enhancement.
+
+    all_users[user_index] = user_to_update
+    save_users(all_users)
+
+    try:
+        updated_user_model = User.model_validate(user_to_update)
+        return updated_user_model
+    except Exception as e:
+        print(f"Error validating user data after points update: {e} - Data: {user_to_update}")
+        raise HTTPException(status_code=500, detail="Error processing user data after points update.")
+
+
+@api_router.get("/admin/users", response_model=List[User])
+async def admin_get_users(current_user: User = Depends(get_current_user)):
     if current_user.role != USER_ROLES["ADMIN"]:
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    result = await db_session.execute(select(UserDb).order_by(UserDb.created_at.desc()))
-    users_db = result.scalars().all()
-    # Convert list of UserDb to list of Pydantic User models, excluding password_hash
-    # Note: Pydantic User model doesn't have password_hash by default in its schema for responses
-    return [User.model_validate(user) for user in users_db]
+    all_users_data = load_users()
+    
+    # Sort users by created_at (descending - newest first)
+    # Assumes created_at is an ISO string that can be sorted lexicographically
+    all_users_data.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    
+    # Validate and convert to Pydantic User models
+    # Pydantic's User model does not include 'password_hash', so it will be excluded automatically.
+    validated_users = []
+    for user_data in all_users_data:
+        try:
+            validated_users.append(User.model_validate(user_data))
+        except Exception as e:
+            print(f"Error validating user data for GET /admin/users: {e} - Data: {user_data}")
+            # Optionally, decide to skip this item or handle error differently
+            
+    return validated_users
 
 @api_router.delete("/admin/users/{user_id}")
-async def admin_delete_user(user_id: str, current_user: User = Depends(get_current_user), db_session: AsyncSession = Depends(get_db)):
+async def admin_delete_user(user_id: str, current_user: User = Depends(get_current_user)):
     if current_user.role != USER_ROLES["ADMIN"]:
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    # First, find the user to ensure it exists
-    user_to_delete_result = await db_session.execute(select(UserDb).where(UserDb.id == user_id))
-    user_to_delete = user_to_delete_result.scalars().first()
-
-    if not user_to_delete:
+    all_users = load_users()
+    user_to_delete_index = -1
+    for i, user_dict in enumerate(all_users):
+        if user_dict.get("id") == user_id:
+            user_to_delete_index = i
+            break
+            
+    if user_to_delete_index == -1:
         raise HTTPException(status_code=404, detail="User not found")
-
-    await db_session.delete(user_to_delete)
-    try:
-        await db_session.commit()
-    except IntegrityError: # Should not happen on delete unless there are FK constraints not handled
-        await db_session.rollback()
-        raise HTTPException(status_code=500, detail="Could not delete user due to a database error.")
     
-    return {"message": "User deleted successfully"}
+    del all_users[user_to_delete_index]
+    save_users(all_users)
 
-@api_router.post("/admin/create-question")
+    # Cascading delete for food_entries.json
+    try:
+        all_food_entries = load_food_entries()
+        # Filter out food entries belonging to the deleted user
+        updated_food_entries = [entry for entry in all_food_entries if entry.get("user_id") != user_id]
+        if len(updated_food_entries) < len(all_food_entries):
+            save_food_entries(updated_food_entries)
+            food_entries_message = "Food entries for the user also deleted."
+        else:
+            food_entries_message = "No food entries found for the user to delete."
+    except Exception as e:
+        # Log this error but don't let it fail the whole user deletion process
+        print(f"Error during cascading delete of food entries for user {user_id}: {e}")
+        food_entries_message = "Could not process food entry deletion due to an error."
+
+    # Cascading delete for chat_messages.json
+    chat_messages_delete_message = ""
+    try:
+        all_chat_messages = load_chat_messages()
+        updated_chat_messages = [msg for msg in all_chat_messages if msg.get("user_id") != user_id]
+        if len(updated_chat_messages) < len(all_chat_messages):
+            save_chat_messages(updated_chat_messages)
+            chat_messages_delete_message = "Chat messages for the user also deleted."
+        else:
+            chat_messages_delete_message = "No chat messages found for the user to delete."
+    except Exception as e:
+        print(f"Error during cascading delete of chat messages for user {user_id}: {e}")
+        chat_messages_delete_message = "Could not process chat message deletion due to an error."
+
+    # Cascading delete for question_responses.json
+    question_responses_delete_message = ""
+    try:
+        all_question_responses = load_question_responses()
+        updated_question_responses = [resp for resp in all_question_responses if resp.get("user_id") != user_id]
+        if len(updated_question_responses) < len(all_question_responses):
+            save_question_responses(updated_question_responses)
+            question_responses_delete_message = "Question responses for the user also deleted."
+        else:
+            question_responses_delete_message = "No question responses found for the user to delete."
+    except Exception as e:
+        print(f"Error during cascading delete of question responses for user {user_id}: {e}")
+        question_responses_delete_message = "Could not process question response deletion due to an error."
+
+    # Cascading delete for gallery_items.json
+    gallery_items_delete_message = ""
+    try:
+        all_gallery_items = load_gallery_items()
+        updated_gallery_items = [item for item in all_gallery_items if item.get("user_id") != user_id]
+        if len(updated_gallery_items) < len(all_gallery_items):
+            save_gallery_items(updated_gallery_items)
+            gallery_items_delete_message = "Gallery items for the user also deleted."
+        else:
+            gallery_items_delete_message = "No gallery items found for the user to delete."
+    except Exception as e:
+        print(f"Error during cascading delete of gallery items for user {user_id}: {e}")
+        gallery_items_delete_message = "Could not process gallery item deletion due to an error."
+
+    # Cascading delete for calorie_checks.json
+    calorie_checks_delete_message = ""
+    try:
+        all_calorie_checks = load_calorie_checks()
+        updated_calorie_checks = [check for check in all_calorie_checks if check.get("user_id") != user_id]
+        if len(updated_calorie_checks) < len(all_calorie_checks):
+            save_calorie_checks(updated_calorie_checks)
+            calorie_checks_delete_message = "Calorie checks for the user also deleted."
+        else:
+            calorie_checks_delete_message = "No calorie checks found for the user to delete."
+    except Exception as e:
+        print(f"Error during cascading delete of calorie checks for user {user_id}: {e}")
+        calorie_checks_delete_message = "Could not process calorie check deletion due to an error."
+
+    # Cascading delete for food_comparisons.json
+    food_comparisons_delete_message = ""
+    try:
+        all_food_comparisons = load_food_comparisons()
+        updated_food_comparisons = [comp for comp in all_food_comparisons if comp.get("user_id") != user_id]
+        if len(updated_food_comparisons) < len(all_food_comparisons):
+            save_food_comparisons(updated_food_comparisons)
+            food_comparisons_delete_message = "Food comparisons for the user also deleted."
+        else:
+            food_comparisons_delete_message = "No food comparisons found for the user to delete."
+    except Exception as e:
+        print(f"Error during cascading delete of food comparisons for user {user_id}: {e}")
+        food_comparisons_delete_message = "Could not process food comparison deletion due to an error."
+
+    return {
+        "message": f"User deleted successfully from users.json. {food_entries_message} {chat_messages_delete_message} {question_responses_delete_message} {gallery_items_delete_message} {calorie_checks_delete_message} {food_comparisons_delete_message}"
+    }
+
+@api_router.post("/admin/create-question", response_model=DailyQuestion)
 async def admin_create_question(
-    question: str = Form(...),
-    options: str = Form(...),  # JSON string of options
-    date: str = Form(...),
-    points_reward: int = Form(5),
-    current_user: User = Depends(get_current_user),
-    db_session: AsyncSession = Depends(get_db)
+    question_data: DailyQuestionCreate, 
+    current_user: User = Depends(get_current_user)
 ) -> DailyQuestion:
     if current_user.role != USER_ROLES["ADMIN"]:
         raise HTTPException(status_code=403, detail="Admin access required")
-    
-    try:
-        options_list = json.loads(options)
-    except:
-        raise HTTPException(status_code=400, detail="Invalid options format")
-    
-    # Create Pydantic model first for validation and structure
-    daily_question_data = DailyQuestion(
-        question=question,
-        options=options_list,
-        date=date, # Assuming date is already in 'YYYY-MM-DD' string format as expected by DailyQuestionDb
-        points_reward=points_reward
-        # id and timestamp will be set by DailyQuestionDb defaults
-    )
 
-    # Convert to DB model for saving
-    new_question_db = DailyQuestionDb(
-        id=daily_question_data.id, # Use id from Pydantic model if it's generated there
-        question=daily_question_data.question,
-        options=daily_question_data.options,
-        date=daily_question_data.date,
-        points_reward=daily_question_data.points_reward,
-        is_active=daily_question_data.is_active # Ensure is_active is handled
-    )
-    
-    db_session.add(new_question_db)
+    all_questions = load_daily_questions()
+
+    # Check if a question for this date already exists
+    for q_dict in all_questions:
+        if q_dict.get("date") == question_data.date:
+            raise HTTPException(status_code=400, detail=f"A question for date {question_data.date} already exists.")
+
+    # If the new question is set to active, deactivate any other active questions
+    if question_data.active:
+        for q_dict in all_questions:
+            if q_dict.get("active") is True:
+                q_dict["active"] = False # Deactivate existing active question
+
+    new_question_entry = {
+        "id": str(uuid.uuid4()),
+        "question": question_data.question,
+        "options": question_data.options,
+        "date": question_data.date,
+        "active": question_data.active,
+        "points_reward": question_data.points_reward,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    all_questions.append(new_question_entry)
+    save_daily_questions(all_questions)
+
     try:
-        await db_session.commit()
-        await db_session.refresh(new_question_db)
-    except IntegrityError:
-        await db_session.rollback()
-        raise HTTPException(status_code=500, detail="Failed to create daily question due to a database error.")
-    
-    return DailyQuestion.model_validate(new_question_db)
+        validated_question = DailyQuestion.model_validate(new_question_entry)
+        return validated_question
+    except Exception as e:
+        print(f"Error validating daily question data: {e} - Data: {new_question_entry}")
+        raise HTTPException(status_code=500, detail="Error processing question after saving.")
+
+@api_router.post("/feedback", response_model=Feedback)
+async def submit_feedback(feedback_input: FeedbackCreate, current_user: User = Depends(get_current_user)) -> Feedback:
+    feedback_data = {
+        "id": str(uuid.uuid4()), # Pydantic's default_factory for Feedback model will also generate one
+        "user_id": current_user.id,
+        "username": current_user.username,
+        "feedback_text": feedback_input.feedback_text,
+        "category": feedback_input.category,
+        "timestamp": datetime.now(timezone.utc).isoformat() # Pydantic will parse this to datetime
+    }
+
+    all_feedback_items = load_feedback_items()
+    all_feedback_items.append(feedback_data)
+    save_feedback_items(all_feedback_items)
+
+    # Validate the data with the Feedback Pydantic model before returning
+    # This ensures the response conforms to the defined schema (e.g., ISO str to datetime)
+    try:
+        validated_feedback = Feedback.model_validate(feedback_data)
+        return validated_feedback
+    except Exception as e:
+        print(f"Error validating feedback data: {e} - Data: {feedback_data}")
+        # This case should ideally not happen if data is constructed correctly
+        raise HTTPException(status_code=500, detail="Error processing feedback after saving.")
 
 # Basic endpoints
 @api_router.get("/")
