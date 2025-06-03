@@ -673,118 +673,84 @@ async def create_food_entry(
     meal_type: str = Form(...),
     quantity: str = Form(...),
     image: Optional[UploadFile] = File(None),
-    current_user: User = Depends(get_current_user),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
-    db_session: AsyncSession = Depends(get_db)
+    current_user: User = Depends(get_current_user) # Uses users.json
 ):
-    # Handle image upload
-    image_data = None
+    image_url = None
     if image:
-        # Convert image to base64 for storage
-        image_bytes = await image.read()
-        image_data = base64.b64encode(image_bytes).decode('utf-8')
+        upload_dir = "static/uploads"
+        os.makedirs(upload_dir, exist_ok=True)
+        file_extension = os.path.splitext(image.filename)[1]
+        unique_filename = f"{uuid.uuid4()}{file_extension}"
+        file_path = os.path.join(upload_dir, unique_filename)
+        try:
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(image.file, buffer) # Ensure shutil is imported
+            image_url = f"/static/uploads/{unique_filename}"
+        except Exception as e:
+            print(f"Error saving image: {e}")
+            # Consider raising HTTPException(status_code=500, detail=f"Could not save image: {e}")
+
+    # Analyze food item - assuming analyze_food_with_huggingface uses food_name primarily
+    # If image analysis is needed, this function might need image_url or file_path
+    ai_analysis_result = await analyze_food_with_huggingface(food_name)
     
-    # Analyze food with enhanced AI
-    ai_analysis = await analyze_food_with_huggingface(food_name, image_data)
-    points_earned = calculate_points(ai_analysis["score"])
-    
-    # Calculate estimated calories
-    estimated_calories = estimate_calories(food_name, quantity, ai_analysis["calories_per_100g"])
-    
-    # Create FoodEntryDb instance
-    new_food_entry_db = FoodEntryDb(
-        user_id=current_user.id,
-        food_name=food_name,
-        meal_type=meal_type,
-        quantity=quantity,
-        image_data=image_data,
-        ai_score=ai_analysis["score"],
-        ai_feedback=ai_analysis["feedback"],
-        ai_suggestions=ai_analysis["suggestions"],
-        calories_estimated=estimated_calories,
-        nutrition_info={
-            "calories_per_100g": ai_analysis["calories_per_100g"],
-            "category": ai_analysis["category"],
-            "detected_food": ai_analysis["detected_food"],
-            "confidence": ai_analysis["confidence"]
+    # Points awarded - directly from AI score or via calculate_points if defined
+    points_earned = ai_analysis_result.get("score", 0)
+
+    food_entry_id = str(uuid.uuid4())
+    food_entry_data = {
+        "id": food_entry_id,
+        "user_id": current_user.id,
+        "username": current_user.username,
+        "class_code": current_user.class_code,
+        "food_name": food_name,
+        "meal_type": meal_type,
+        "quantity": quantity,
+        "image_url": image_url,
+        "ai_score": ai_analysis_result.get("score", 0), # from ai_analysis_result
+        "ai_feedback": ai_analysis_result.get("feedback", ""),
+        "ai_suggestions": ai_analysis_result.get("suggestions", []),
+        "calories_per_100g": ai_analysis_result.get("calories_per_100g", 0),
+        "protein": ai_analysis_result.get("protein", 0), # Added protein
+        "fat": ai_analysis_result.get("fat", 0), # Added fat
+        "carbs": ai_analysis_result.get("carbohydrates", 0), # Added carbs
+        "nutrition_info": { # Retaining a similar structure for other AI info
+            "category": ai_analysis_result.get("category", "unknown"),
+            "detected_food": ai_analysis_result.get("detected_food", food_name),
+            "confidence": ai_analysis_result.get("confidence", 0)
         },
-        points_earned=points_earned
-        # id and timestamp have defaults
-    )
-    db_session.add(new_food_entry_db)
-    
-    # Add to gallery if image is provided and score is good
-    gallery_item_db = None # Initialize to None
-    if image_data and ai_analysis["score"] >= 6:
-        gallery_item_db = GalleryDb(
-            user_id=current_user.id,
-            username=current_user.username,
-            food_name=food_name,
-            image_data=image_data,
-            ai_score=ai_analysis["score"]
-            # id, likes, and timestamp have defaults
-        )
-        db_session.add(gallery_item_db)
-    
-    # Fetch the user from DB to update
-    user_to_update_result = await db_session.execute(select(UserDb).where(UserDb.id == current_user.id))
-    user_to_update_db = user_to_update_result.scalars().first()
-
-    if not user_to_update_db:
-        # This should ideally not happen if get_current_user worked
-        raise HTTPException(status_code=404, detail="User not found for update")
-
-    # Update user points and level
-    user_to_update_db.points += points_earned
-    user_to_update_db.level = check_level_up(user_to_update_db.points)
-    
-    # Check for new badges
-    # Convert Pydantic FoodEntry (from new_food_entry_db) and User (from user_to_update_db) to dicts for award_badges
-    # We need to be careful here. award_badges expects dicts. 
-    # For new_entry, we can use the Pydantic model we would return.
-    # For user_data, we use the current state of user_to_update_db before new badges are added.
-    temp_food_entry_pydantic = FoodEntry.model_validate(new_food_entry_db) 
-    temp_user_pydantic = User.model_validate(user_to_update_db)
-
-    newly_awarded_badges = award_badges(temp_user_pydantic.model_dump(), temp_food_entry_pydantic.model_dump())
-    
-    # Add only genuinely new badges to avoid duplicates if award_badges isn't idempotent
-    current_badges_set = set(user_to_update_db.badges)
-    for badge in newly_awarded_badges:
-        if badge not in current_badges_set:
-            user_to_update_db.badges.append(badge)
-            current_badges_set.add(badge)
-    # Ensure badges list is updated on the model for SQLAlchemy to detect changes if it's a mutable JSON type
-    user_to_update_db.badges = list(current_badges_set) 
-    
-    # Update user streak (will be committed with other changes)
-    # Pass the current db_session to the background task if it needs to perform its own commit (not ideal)
-    # Or, ensure update_user_streak modifies the user_to_update_db object directly before the main commit.
-    # For now, let's assume update_user_streak modifies user_to_update_db directly and doesn't commit.
-    await update_user_streak(user_to_update_db.id, db_session) # Pass session, it will modify user_to_update_db
-
-    try:
-        await db_session.commit()
-        await db_session.refresh(new_food_entry_db)
-        if gallery_item_db:
-             await db_session.refresh(gallery_item_db)
-        await db_session.refresh(user_to_update_db)
-    except IntegrityError:
-        await db_session.rollback()
-        raise HTTPException(status_code=500, detail="Database error while saving food entry.")
-    
-    # Return Pydantic model of the created food entry, plus additional info
-    response_food_entry = FoodEntry.model_validate(new_food_entry_db)
-    return {
-        **response_food_entry.model_dump(),
-        "points_earned": points_earned, # This is already in response_food_entry.points_earned
-        "new_badges": newly_awarded_badges, # Use the badges that were actually awarded now
-        "total_points": user_to_update_db.points,
-        "level": user_to_update_db.level
+        "points_earned": points_earned, # This is likely the same as ai_score for now
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
+
+    all_food_entries = load_food_entries()
+    all_food_entries.append(food_entry_data)
+    save_food_entries(all_food_entries)
+
+    all_users = load_users()
+    user_found_for_update = False
+    for i, u_data in enumerate(all_users):
+        if u_data.get('id') == current_user.id:
+            updated_user_data = update_user_data_for_new_entry(u_data, points_earned)
+            all_users[i] = updated_user_data
+            user_found_for_update = True
+            break
+    
+    if user_found_for_update:
+        save_users(all_users)
+    else:
+        print(f"Error: User with ID {current_user.id} not found in users.json for update.")
+        # Consider: raise HTTPException(status_code=404, detail=f"User {current_user.id} not found for update.")
+
+    response_data = FoodEntry.model_validate(food_entry_data).model_dump()
+    response_data["new_badges"] = [] # Badge logic removed for now
+    # points_earned is already in response_data via FoodEntry model if it includes it
+
+    return response_data
 
 @api_router.get("/food-entries")
 async def get_user_food_entries(current_user: User = Depends(get_current_user), db_session: AsyncSession = Depends(get_db)) -> List[FoodEntry]:
+    # This endpoint still uses SQLAlchemy and needs to be migrated later
     result = await db_session.execute(
         select(FoodEntryDb)
         .where(FoodEntryDb.user_id == current_user.id)
@@ -796,6 +762,7 @@ async def get_user_food_entries(current_user: User = Depends(get_current_user), 
 
 @api_router.get("/food-entries/all")
 async def get_all_food_entries(current_user: User = Depends(get_current_user), db_session: AsyncSession = Depends(get_db)) -> List[FoodEntry]:
+    # This endpoint still uses SQLAlchemy and needs to be migrated later
     # Only admin and teachers can see all entries
     if current_user.role not in [USER_ROLES["ADMIN"], USER_ROLES["TEACHER"]]:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -805,7 +772,7 @@ async def get_all_food_entries(current_user: User = Depends(get_current_user), d
         result = await db_session.execute(
             select(FoodEntryDb)
             .order_by(FoodEntryDb.timestamp.desc())
-            .limit(1000)
+            .limit(1000) # Consider pagination for very large datasets
         )
         entries_db = result.scalars().all()
         return [FoodEntry.model_validate(entry) for entry in entries_db]
@@ -813,120 +780,17 @@ async def get_all_food_entries(current_user: User = Depends(get_current_user), d
         result = await db_session.execute(
             select(FoodEntryDb)
             .order_by(FoodEntryDb.timestamp.desc())
-            .limit(1000)
+            .limit(1000) # Consider pagination
         )
         entries_db = result.scalars().all()
         teacher_entries_response = []
         for entry_db in entries_db:
-            # Create a Pydantic FoodEntry model, then modify it for the teacher view
             pydantic_entry = FoodEntry.model_validate(entry_db)
-            pydantic_entry.user_id = "hidden" # Anonymize user_id
-            # Potentially nullify or anonymize other fields if needed for teachers
-            # pydantic_entry.image_data = None # Example if images should be hidden
+            pydantic_entry.user_id = "hidden" # Anonymize user_id for teachers
+            # Optionally nullify or anonymize other sensitive fields for teacher view
+            # e.g., pydantic_entry.ai_feedback = None 
             teacher_entries_response.append(pydantic_entry)
         return teacher_entries_response
-
-# Calorie Checker
-@api_router.post("/calorie-check")
-async def check_calories(
-    food_name: str = Form(...),
-    quantity: str = Form(...),
-    current_user: User = Depends(get_current_user)
-):
-    # Get nutrition info from our database or AI
-    ai_analysis = await analyze_food_with_huggingface(request.food_name)
-    calories_per_100g = ai_analysis["calories_per_100g"]
-    estimated_calories = estimate_calories(request.food_name, request.quantity, calories_per_100g)
-    
-    calorie_check_db = CalorieCheckDb(
-        user_id=current_user.id,
-        food_name=request.food_name,
-        quantity=request.quantity,
-        calories_estimated=estimated_calories,
-        ai_analysis=ai_analysis  # Store the full AI analysis
-        # id and timestamp have defaults
-    )
-    db_session.add(calorie_check_db)
-    try:
-        await db_session.commit()
-        await db_session.refresh(calorie_check_db)
-    except IntegrityError:
-        await db_session.rollback()
-        raise HTTPException(status_code=500, detail="Database error while saving calorie check.")
-    
-    return CalorieCheck.model_validate(calorie_check_db)
-
-# Food Comparison
-@api_router.post("/food-compare")
-async def compare_foods(
-    food_1: str = Form(...),
-    food_2: str = Form(...),
-    current_user: User = Depends(get_current_user),
-    db_session: AsyncSession = Depends(get_db)
-):
-    # Analyze both foods
-    analysis_1 = await analyze_food_with_huggingface(food_1)
-    analysis_2 = await analyze_food_with_huggingface(food_2)
-    
-    # Compare the foods
-    comparison_result = {
-        "food_1": {
-            "name": food_1,
-            "score": analysis_1["score"],
-            "calories_per_100g": analysis_1["calories_per_100g"],
-            "category": analysis_1["category"],
-            "feedback": analysis_1["feedback"]
-        },
-        "food_2": {
-            "name": food_2,
-            "score": analysis_2["score"],
-            "calories_per_100g": analysis_2["calories_per_100g"],
-            "category": analysis_2["category"],
-            "feedback": analysis_2["feedback"]
-        },
-        "winner": food_1 if analysis_1["score"] > analysis_2["score"] else food_2,
-        "score_difference": abs(analysis_1["score"] - analysis_2["score"]),
-        "calorie_difference": abs(analysis_1["calories_per_100g"] - analysis_2["calories_per_100g"]),
-        "recommendation": generate_comparison_recommendation(analysis_1, analysis_2)
-    }
-    
-    food_comparison_db = FoodComparisonDb(
-        user_id=current_user.id,
-        food_item_1=food_1,
-        food_item_2=food_2,
-        comparison_result=comparison_result,
-        ai_analysis={"analysis_1": analysis_1, "analysis_2": analysis_2} # Store the full AI analysis
-        # id and timestamp have defaults
-    )
-    db_session.add(food_comparison_db)
-    try:
-        await db_session.commit()
-        await db_session.refresh(food_comparison_db)
-    except IntegrityError:
-        await db_session.rollback()
-        raise HTTPException(status_code=500, detail="Database error while saving food comparison.")
-    
-    return FoodComparison.model_validate(food_comparison_db)
-
-def generate_comparison_recommendation(analysis_1: Dict, analysis_2: Dict) -> str:
-    """Generate recommendation based on food comparison"""
-    if analysis_1["score"] > analysis_2["score"]:
-        better_food = analysis_1
-        worse_food = analysis_2
-    else:
-        better_food = analysis_2
-        worse_food = analysis_1
-    
-    score_diff = better_food["score"] - worse_food["score"]
-    
-    if score_diff >= 3:
-        return f"Duidelijke winnaar! De betere keuze heeft {score_diff} punten meer en is veel gezonder."
-    elif score_diff >= 1:
-        return f"Kleine maar belangrijke verschillen. De betere optie scoort {score_diff} punten hoger."
-    else:
-        return "Beide opties zijn vergelijkbaar qua gezondheid. Kies wat je lekkerder vindt!"
-
-# Gallery endpoints
 @api_router.get("/gallery")
 async def get_gallery(current_user: User = Depends(get_current_user), db_session: AsyncSession = Depends(get_db)) -> List[Gallery]:
     result = await db_session.execute(
