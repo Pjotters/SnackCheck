@@ -166,6 +166,22 @@ hf_client = InferenceClient(token=os.environ.get('HF_API_KEY'))
 # Create the main app without a prefix
 app = FastAPI(title="SnackCheck Research Platform", version="3.0.0")
 
+# CORS Middleware Configuration
+origins = [
+    "https://onderzoek-snackcheck.vercel.app",  # Vercel frontend
+    "http://localhost:3000",  # Local React development
+    "http://127.0.0.1:3000", # Local React development
+    # Add other origins if needed
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
+
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
