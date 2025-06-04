@@ -641,7 +641,12 @@ const Gallery = () => {
   const fetchGallery = async () => {
     try {
       const response = await axios.get(`${API}/gallery`);
-      setGalleryItems(response.data);
+      if (Array.isArray(response.data)) {
+        setGalleryItems(response.data);
+      } else {
+        console.error('Error: /gallery did not return an array:', response.data);
+        setGalleryItems([]); // Default to empty array to prevent .map errors
+      }
     } catch (error) {
       console.error('Error fetching gallery:', error);
     } finally {
@@ -742,7 +747,12 @@ const ChatHelp = () => {
   const fetchMessages = async () => {
     try {
       const response = await axios.get(`${API}/chat/messages`);
-      setMessages(response.data.reverse()); // Reverse to show newest first, then reverse again for display
+      if (Array.isArray(response.data)) {
+        setMessages(response.data.reverse()); // Reverse to show newest first, then reverse again for display
+      } else {
+        console.error('Error: /chat/messages did not return an array:', response.data);
+        setMessages([]); // Default to empty array
+      }
     } catch (error) {
       console.error('Error fetching messages:', error);
     } finally {
@@ -853,7 +863,12 @@ const AdminUserManagement = () => {
   const fetchUsers = async () => {
     try {
       const response = await axios.get(`${API}/admin/users`);
-      setUsers(response.data);
+      if (Array.isArray(response.data)) {
+        setUsers(response.data);
+      } else {
+        console.error('Error: /admin/users did not return an array:', response.data);
+        setUsers([]); // Default to empty array
+      }
     } catch (error) {
       console.error('Error fetching users:', error);
     } finally {
@@ -1224,7 +1239,12 @@ const StudentDashboard = ({ user }) => {
   const fetchEntries = async () => {
     try {
       const response = await axios.get(`${API}/food-entries`);
-      setEntries(response.data);
+      if (Array.isArray(response.data)) {
+        setEntries(response.data);
+      } else {
+        console.error('Error: /food-entries did not return an array:', response.data);
+        setEntries([]); // Default to empty array to prevent .map errors
+      }
     } catch (error) {
       console.error('Error fetching entries:', error);
     } finally {
@@ -1325,7 +1345,12 @@ const AnalyticsDashboard = ({ user }) => {
   const fetchAnalytics = async () => {
     try {
       const response = await axios.get(`${API}/analytics/class-summary`);
-      setAnalytics(response.data);
+      if (Array.isArray(response.data)) {
+        setAnalytics(response.data);
+      } else {
+        console.error('Error: /analytics/class-summary did not return an array:', response.data);
+        setAnalytics([]); // Default to empty array
+      }
     } catch (error) {
       console.error('Error fetching analytics:', error);
     }
@@ -1334,7 +1359,12 @@ const AnalyticsDashboard = ({ user }) => {
   const fetchAllEntries = async () => {
     try {
       const response = await axios.get(`${API}/food-entries/all`);
-      setAllEntries(response.data);
+      if (Array.isArray(response.data)) {
+        setAllEntries(response.data);
+      } else {
+        console.error('Error: /food-entries/all did not return an array:', response.data);
+        setAllEntries([]); // Default to empty array
+      }
     } catch (error) {
       console.error('Error fetching entries:', error);
     } finally {
@@ -1564,7 +1594,12 @@ const UserStats = ({ user }) => {
   const fetchLeaderboard = async () => {
     try {
       const response = await axios.get(`${API}/leaderboard`);
-      setLeaderboard(response.data);
+      if (Array.isArray(response.data)) {
+        setLeaderboard(response.data);
+      } else {
+        console.error('Error: /leaderboard did not return an array:', response.data);
+        setLeaderboard([]); // Default to empty array
+      }
     } catch (error) {
       console.error('Error fetching leaderboard:', error);
     } finally {
@@ -1675,7 +1710,12 @@ const DailyQuestions = () => {
   const fetchTodaysQuestions = async () => {
     try {
       const response = await axios.get(`${API}/daily-questions/today`);
-      setQuestions(response.data);
+      if (Array.isArray(response.data)) {
+        setQuestions(response.data);
+      } else {
+        console.error('Error: /daily-questions/today did not return an array:', response.data);
+        setQuestions([]); // Default to empty array
+      }
     } catch (error) {
       console.error('Error fetching questions:', error);
     } finally {
@@ -1728,7 +1768,7 @@ const DailyQuestions = () => {
         <div key={question.id} className="bg-white rounded-xl shadow-md p-6">
           <h3 className="text-lg font-semibold text-gray-800 mb-4">{question.question}</h3>
           <div className="space-y-2">
-            {question.options.map((option, idx) => (
+            {Array.isArray(question.options) && question.options.map((option, idx) => (
               <button
                 key={idx}
                 onClick={() => submitAnswer(question.id, option)}
