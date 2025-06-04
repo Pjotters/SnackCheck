@@ -30,16 +30,16 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # Password Hashing
-from passlib.context import CryptContext
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Password Hashing disabled
+# pwd_context was here
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifies a plain password against a hashed password."""
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(plain_password: str, stored_password: str) -> bool:
+    """Verifies a plain password against a stored (plain text) password."""
+    return plain_password == stored_password
 
 def get_password_hash(password: str) -> str:
-    """Hashes a password."""
-    return pwd_context.hash(password)
+    """Returns the password as is (no hashing)."""
+    return password
 
 
 # SQLAlchemy Database Setup
@@ -523,10 +523,12 @@ def award_badges(user_data: dict, new_entry: dict) -> List[str]:
 
 # Utility functions
 def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+    """Returns the password as is (no hashing). Was SHA256."""
+    return password
 
-def verify_password(password: str, hashed: str) -> bool:
-    return hash_password(password) == hashed
+def verify_password(password: str, stored_password: str) -> bool:
+    """Verifies a plain password against a stored (plain text) password. Was SHA256."""
+    return password == stored_password
 
 def create_jwt_token(user_id: str, role: str) -> str:
     payload = {
@@ -828,6 +830,20 @@ def save_feedback_items(feedback_items):
     except IOError as e:
         print(f"Error writing to {FEEDBACK_ITEMS_FILE}: {e}")
 
+# Model for user data returned after successful login (excludes password_hash)
+class UserResponse(BaseModel):
+    id: str
+    username: str
+    class_code: str
+    role: str
+    points: Optional[int] = 0
+    level: Optional[int] = 1
+    badges: Optional[List[str]] = Field(default_factory=list)
+    streak_days: Optional[int] = 0
+    last_entry_date: Optional[str] = None
+    created_at: str
+
+
 @api_router.post("/login")
 async def login_user(login_data: UserLogin): # Removed db_session and related imports for this function
     users = load_users()
@@ -851,7 +867,7 @@ async def login_user(login_data: UserLogin): # Removed db_session and related im
     user_data_for_response = {
         k: v for k, v in found_user.items() if k != 'password_hash'
     }
-    user_response = User.model_validate(user_data_for_response)
+    user_response = UserResponse.model_validate(user_data_for_response)
 
     return {
         "token": token,
@@ -958,26 +974,24 @@ async def create_food_entry(
 
     return response_data
 
-@api_router.get("/food-entries")
-async def get_user_food_entries(current_user: User = Depends(get_current_user)) -> List[FoodEntry]:
-    all_food_entries = load_food_entries()
-    user_entries = []
-    for entry_data in all_food_entries:
-        if entry_data.get("user_id") == current_user.id:
-            # Ensure the structure of entry_data matches FoodEntry Pydantic model
-            # If not, you might need to transform it or adjust FoodEntry model
-            try:
-                user_entries.append(FoodEntry.model_validate(entry_data))
-            except Exception as e:
-                print(f"Error validating food entry data for user {current_user.id}: {e} - Data: {entry_data}")
-                # Decide how to handle: skip this entry, raise error, etc.
+@api_router.get("/food-entries", response_model=List[FoodEntry]) # Added response_model for clarity and validation
+async def get_user_food_entries(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Query the database for food entries for the current user
+    stmt = (
+        select(FoodEntryDb)
+        .where(FoodEntryDb.user_id == current_user.id)
+        .order_by(FoodEntryDb.timestamp.desc()) # Order by timestamp, newest first
+        .limit(100) # Limit to 100 entries, similar to original logic
+    )
+    result = await db.execute(stmt)
+    food_entries_db = result.scalars().all()
+
+    # Convert SQLAlchemy model instances to Pydantic model instances
+    # This assumes FoodEntry Pydantic model can be created from FoodEntryDb attributes
+    # (e.g., if FoodEntry has model_config = ConfigDict(from_attributes=True))
+    user_entries = [FoodEntry.model_validate(entry_db) for entry_db in food_entries_db]
     
-    # Optional: sort entries by date, similar to the original query
-    # Assuming 'created_at' is an ISO format string that can be sorted lexicographically for recent first
-    user_entries.sort(key=lambda x: x.created_at, reverse=True)
-    
-    # Optional: limit the number of entries, similar to the original query
-    return user_entries[:100] # Return up to 100 most recent entries
+    return user_entries
 
 @api_router.get("/food-entries/all")
 async def get_all_food_entries(current_user: User = Depends(get_current_user)) -> List[FoodEntry]:
@@ -1009,26 +1023,22 @@ async def get_all_food_entries(current_user: User = Depends(get_current_user)) -
             # Decide how to handle: skip this entry, raise error, etc.
             
     return processed_entries
-@api_router.get("/gallery")
-async def get_gallery(current_user: User = Depends(get_current_user)) -> List[Gallery]:
-    all_gallery_items_data = load_gallery_items()
+@api_router.get("/gallery", response_model=List[Gallery]) # Added response_model for clarity and validation
+async def get_gallery(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Query the database for gallery items
+    stmt = (
+        select(GalleryDb)
+        .order_by(GalleryDb.timestamp.desc()) # Order by timestamp, newest first
+        .limit(50) # Limit to 50 items, similar to original logic
+    )
+    result = await db.execute(stmt)
+    gallery_items_db = result.scalars().all()
+
+    # Convert SQLAlchemy model instances to Pydantic model instances
+    # This assumes Gallery Pydantic model can be created from GalleryDb attributes
+    # (e.g., if Gallery has model_config = ConfigDict(from_attributes=True))
+    gallery_items_response = [Gallery.model_validate(item_db) for item_db in gallery_items_db]
     
-    # Sort by 'created_at' in descending order (recent first)
-    # Assuming 'created_at' is an ISO format string that can be sorted lexicographically
-    all_gallery_items_data.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    
-    # Limit to the most recent 50 items
-    limited_gallery_data = all_gallery_items_data[:50]
-    
-    # Validate and convert to Pydantic models
-    gallery_items_response = []
-    for item_data in limited_gallery_data:
-        try:
-            gallery_items_response.append(Gallery.model_validate(item_data))
-        except Exception as e:
-            print(f"Error validating gallery item data: {e} - Data: {item_data}")
-            # Optionally, decide to skip this item or handle error differently
-            
     return gallery_items_response
 
 @api_router.post("/gallery/{item_id}/like")

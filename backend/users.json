@@ -1,0 +1,15 @@
+[
+  {
+    "id": "6694d22a-be3e-43cf-a1eb-cca4094d4ced",
+    "username": "hallo",
+    "password_hash": "UNHASHED_12345",
+    "class_code": "admin",
+    "role": "admin",
+    "points": 0,
+    "level": 1,
+    "badges": [],
+    "streak_days": 0,
+    "last_entry_date": null,
+    "created_at": "2025-06-03T23:07:43.531478+00:00"
+  }
+]
