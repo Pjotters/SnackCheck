@@ -7,6 +7,7 @@ const multer = require('multer');
 const axios = require('axios');
 const fs = require('fs-extra'); // Using fs-extra for ensureDirSync and robust file ops
 const path = require('path');
+const bcrypt = require('bcrypt'); // Added for password hashing
 
 // --- CONFIGURATION & CONSTANTS ---
 const PORT = process.env.PORT || 3001;
@@ -953,6 +954,55 @@ apiRouter.post('/questions/submit', authenticateToken, async (req, res) => {
     }
 });
 
+// Function to create initial user accounts if they don't exist
+const createInitialUserAccounts = async () => {
+    const usersToCreate = [
+        { username: 'student1', password: 'password123', class_code: 'KlasA', role: 'student' },
+        // Add more users here if needed, e.g.:
+        // { username: 'student2', password: 'password123', class_code: 'KlasA', role: 'student' },
+        // { username: 'adminUser', password: 'adminPassword123', class_code: 'ADMIN', role: 'admin' }
+    ];
+
+    try {
+        let users = await readData(USERS_FILE_PATH);
+        let usersModified = false;
+        const saltRounds = 10; // Cost factor for bcrypt
+
+        for (const userSpec of usersToCreate) {
+            const existingUser = users.find(u => u.username === userSpec.username);
+            if (!existingUser) {
+                const hashedPassword = await bcrypt.hash(userSpec.password, saltRounds);
+                const newUser = {
+                    id: uuidv4(),
+                    username: userSpec.username,
+                    password: hashedPassword, // Store the hashed password
+                    class_code: userSpec.class_code,
+                    role: userSpec.role || 'student', // Default role to student
+                    points: 0,
+                    level: 1,
+                    streak: 0,
+                    last_submission_date: null,
+                    badges: [],
+                    created_at: new Date().toISOString()
+                };
+                users.push(newUser);
+                usersModified = true;
+                console.log(`User account '${userSpec.username}' created.`);
+            } else {
+                console.log(`User account '${userSpec.username}' already exists.`);
+            }
+        }
+
+        if (usersModified) {
+            await writeData(USERS_FILE_PATH, users);
+            console.log('Users file updated with new accounts.');
+        }
+    } catch (error) {
+        console.error('Error creating initial user accounts:', error);
+    }
+};
+
+
 // --- SERVER START & INITIALIZATION ---
 const initializeApp = async () => {
     try {
@@ -981,6 +1031,9 @@ const initializeApp = async () => {
                 }
             }
         }
+        
+        // Create initial user accounts after ensuring files exist
+        await createInitialUserAccounts(); // Added call here
 
         app.listen(PORT, () => {
             console.log(`Node.js server listening on port ${PORT}`);
