@@ -43,9 +43,9 @@ const LoginForm = ({ onLogin }) => {
   };
 
   const classCodes = [
-    { code: 'klasA', name: '🏃‍♂️ Brugklas 1', color: 'bg-red-100 text-red-800' },
-    { code: 'klasB', name: '🎯 Brugklas 2', color: 'bg-blue-100 text-blue-800' },
-    { code: 'klasC', name: '⚡ Brugklas 3', color: 'bg-green-100 text-green-800' },
+    { code: 'klasA', name: '🏃‍♂️ VT1?', color: 'bg-red-100 text-red-800' },
+    { code: 'klasB', name: '🎯 AT2h 2', color: 'bg-blue-100 text-blue-800' },
+    { code: 'klasC', name: '⚡ AT1?', color: 'bg-green-100 text-green-800' },
     { code: 'docent', name: '👨‍🏫 Docent', color: 'bg-purple-100 text-purple-800' },
     { code: 'admin', name: '🔧 Administrator', color: 'bg-gray-100 text-gray-800' }
   ];
