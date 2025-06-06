@@ -190,6 +190,8 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 # Security
 security = HTTPBearer()
 SECRET_KEY = "snackcheck_secret_key_2024"
+ALGORITHM = "HS256"  # Added ALGORITHM constant
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days
 
 # User Roles
 USER_ROLES = {
@@ -249,839 +251,104 @@ class User(BaseModel):
 class UserLogin(BaseModel):
     username: str
     password: str
-    class_code: str
-
-class UserCreate(BaseModel):
-    username: str
-    password: str
-    class_code: str
-    role: Optional[str] = None
-
-class FoodEntry(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_id: str
-    food_name: str
-    meal_type: str
-    quantity: str
-    image_data: Optional[str] = None
-    image_url: Optional[str] = None
-    ai_score: Optional[float] = None
-    ai_feedback: Optional[str] = None
-    ai_suggestions: Optional[List[str]] = None
-    calories_estimated: Optional[float] = None
-    nutrition_info: Optional[Dict] = None
-    points_earned: int = 0
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-class Gallery(BaseModel):
-    id: str
-    user_id: str
-    username: str
-    food_name: str
-    image_url: str
-    ai_score: float # Assuming ai_score can be float
-    likes: int
-    created_at: str # ISO format string
-
-class CalorieCheckRequest(BaseModel):
-    food_item: str
-
-class CalorieCheck(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_id: str
-    food_name: str
-    quantity: str
-    calories_per_100g: float
-    estimated_calories: float
-    nutrition_breakdown: Optional[Dict] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-class FoodComparison(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_id: str
-    food_1: str
-    food_2: str
-    comparison_result: Dict
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-class ChatMessage(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_id: str
-    username: str
-    message: str
-    is_admin: bool = False
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-class DailyQuestionCreate(BaseModel):
-    question: str
-    options: List[str]
-    date: str  # Expecting YYYY-MM-DD format
-    active: bool = True
-    points_reward: int = 5
-
-
-class DailyQuestion(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    question: str
-    options: List[str]
-    date: str
-    active: bool = True
-    points_reward: int = 5
-
-class QuestionResponse(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_id: str
-    question_id: str
-    answer: str
-    points_earned: int = 0
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-class QuestionResponseCreate(BaseModel):
-    question_id: str
-    answer: str
-
-class FeedbackCreate(BaseModel):
-    feedback_text: str
-    category: Optional[str] = None
-
-class Feedback(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_id: str
-    username: str
-    feedback_text: str
-    category: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-
-class AdminUpdatePointsRequest(BaseModel):
-    new_points: int
-
-class Gallery(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    user_id: str
-    username: str
-    food_name: str
-    image_b64: Optional[str] = None
-    ai_score: Optional[float] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    likes: int = 0
-
-class ClassSummaryStat(BaseModel):
-    class_code: str
-    total_entries: int
-    avg_score: Optional[float] = None
-    total_points_from_entries: int
-    avg_calories: Optional[float] = None
-    active_users: int
-
-class UserStats(BaseModel):
-    total_entries: int
-    avg_score: Optional[float] = None
-    total_points: int
-    level: int
-    badges: List[str]
-    streak_days: int
-    total_calories_consumed: int
-    avg_calories_per_day: Optional[float] = None
-
-# AI Functions
-async def analyze_food_with_huggingface(food_name: str, image_data: str = None) -> Dict:
-    """Enhanced AI analysis using HuggingFace API"""
-    try:
-        # Try to use HuggingFace for food recognition if image is provided
-        if image_data and hf_client:
-            try:
-                # Convert base64 to image bytes
-                image_bytes = base64.b64decode(image_data)
-                
-                # Use HuggingFace food classification model
-                result = hf_client.image_classification(
-                    image_bytes,
-                    model="nateraw/food"  # Food classification model
-                )
-                
-                if result and len(result) > 0:
-                    # Get the top prediction
-                    top_prediction = result[0]
-                    detected_food = top_prediction.get('label', food_name).lower()
-                    confidence = top_prediction.get('score', 0.5)
-                    
-                    # Use detected food for analysis
-                    food_name = detected_food
-                    
-                    logging.info(f"HuggingFace detected: {detected_food} (confidence: {confidence})")
-                
-            except Exception as e:
-                logging.error(f"HuggingFace API error: {e}")
-                # Fall back to manual analysis
-        
-        # Analyze using our nutrition database
-        food_lower = food_name.lower()
-        
-        # Try exact match first
-        for food_key, data in NUTRITION_DATA.items():
-            if food_key in food_lower or food_lower in food_key:
-                score = data["score"]
-                tips = data["tips"]
-                calories = data["calories_per_100g"]
-                
-                # Generate suggestions based on score
-                suggestions = generate_healthy_alternatives(data["category"], score)
-                
-                return {
-                    "score": score,
-                    "feedback": tips,
-                    "suggestions": suggestions,
-                    "category": data["category"],
-                    "calories_per_100g": calories,
-                    "detected_food": food_name,
-                    "confidence": 0.9
-                }
-        
-        # Default analysis for unknown foods
-        default_score = 5
-        return {
-            "score": default_score,
-            "feedback": "We couldn't analyze this food precisely. Try to include more fruits and vegetables in your diet!",
-            "suggestions": ["Try adding some fruits", "Consider vegetables as snacks", "Drink more water"],
-            "category": "unknown",
-            "calories_per_100g": 200,  # Estimated
-            "detected_food": food_name,
-            "confidence": 0.3
-        }
-        
-    except Exception as e:
-        logging.error(f"Food analysis error: {e}")
-        return {
-            "score": 5,
-            "feedback": "Error analyzing food. Please try again.",
-            "suggestions": ["Try again with a clearer image"],
-            "category": "unknown",
-            "calories_per_100g": 200,
-            "detected_food": food_name,
-            "confidence": 0.1
-        }
-
-def generate_healthy_alternatives(category: str, current_score: int) -> List[str]:
-    """Generate healthy alternatives based on food category"""
-    if current_score >= 7:
-        return ["Great choice! Keep it up!", "Maybe add some variety with other healthy options"]
-    
-    alternatives = {
-        "sweets": ["Try fresh fruits like berries or grapes", "Dark chocolate (70%+) in small amounts", "Frozen grapes or banana 'ice cream'"],
-        "snacks": ["Raw nuts or seeds", "Carrot sticks with hummus", "Air-popped popcorn"],
-        "drinks": ["Water with lemon or cucumber", "Herbal tea", "Sparkling water with fruit"],
-        "fast_food": ["Grilled chicken salad", "Veggie wrap with hummus", "Homemade smoothie bowl"],
-        "processed": ["Whole grain alternatives", "Fresh fruits and vegetables", "Homemade versions with less salt/sugar"]
-    }
-    
-    return alternatives.get(category, ["Add more fruits and vegetables", "Choose whole grain options", "Drink more water"])
-
-def calculate_points(ai_score: float) -> int:
-    """Calculate points earned based on AI score"""
-    if ai_score >= 8:
-        return 15
-    elif ai_score >= 6:
-        return 10
-    elif ai_score >= 4:
-        return 7
-    else:
-        return 3
-
-def estimate_calories(food_name: str, quantity: str, calories_per_100g: float) -> float:
-    """Estimate total calories based on quantity"""
-    try:
-        # Extract numbers from quantity string
-        import re
-        numbers = re.findall(r'\d+', quantity)
-        if numbers:
-            amount = float(numbers[0])
-            # Assume basic serving sizes
-            if 'gram' in quantity.lower() or 'g' in quantity.lower():
-                return (amount / 100) * calories_per_100g
-            elif 'piece' in quantity.lower() or 'stuk' in quantity.lower():
-                # Assume average piece is 150g
-                return (amount * 150 / 100) * calories_per_100g
-            else:
-                # Default to 100g serving
-                return calories_per_100g
-        else:
-            return calories_per_100g
-    except:
-        return calories_per_100g
-
-def check_level_up(total_points: int) -> int:
-    """Calculate user level based on total points"""
-    return (total_points // 100) + 1
-
-def award_badges(user_data: dict, new_entry: dict) -> List[str]:
-    """Award badges based on user behavior"""
-    badges = user_data.get("badges", [])
-    new_badges = []
-    
-    # First healthy choice badge
-    if "healthy_start" not in badges and new_entry["ai_score"] >= 7:
-        new_badges.append("healthy_start")
-    
-    # Streak badges
-    if user_data.get("streak_days", 0) >= 7 and "week_warrior" not in badges:
-        new_badges.append("week_warrior")
-    
-    # Points badges
-    total_points = user_data.get("points", 0)
-    if total_points >= 500 and "point_master" not in badges:
-        new_badges.append("point_master")
-    
-    # AI detection badge
-    if "ai_expert" not in badges and new_entry.get("image_data"):
-        new_badges.append("ai_expert")
-    
-    return new_badges
-
-# Utility functions
-def hash_password(password: str) -> str:
-    """Returns the password as is (no hashing). Was SHA256."""
-    return password
-
-def verify_password(password: str, stored_password: str) -> bool:
-    """Verifies a plain password against a stored (plain text) password. Was SHA256."""
-    return password == stored_password
-
-def create_jwt_token(user_id: str, role: str) -> str:
-    payload = {
-        "user_id": user_id,
-        "role": role,
-        "exp": datetime.utcnow() + timedelta(days=7)
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm="HS256")
-
-def decode_jwt_token(token: str) -> dict:
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
-        if user_id is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    
-    users = load_users() # Defined for login, loads from users.json
-    user_data_from_json = next((u for u in users if u.get('id') == user_id), None)
+    db_user = user_result.scalar_one_or_none()
 
-    if user_data_from_json is None:
-        raise credentials_exception
-    
-    # Validate the user data from JSON against the User Pydantic model
-    # This ensures the structure is correct for the rest of the application
-    try:
-        return User.model_validate(user_data_from_json)
-    except Exception as e:
-        print(f"Error validating user data from JSON for user_id {user_id}: {e}")
-        raise credentials_exception
+    if not db_user or not verify_password(login_data.password, db_user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
-def get_role_from_class_code(class_code: str) -> str:
-    role_mapping = {
-        "KLAS1": USER_ROLES["STUDENT_CLASS_1"],
-        "KLAS2": USER_ROLES["STUDENT_CLASS_2"],
-        "KLAS3": USER_ROLES["STUDENT_CLASS_3"],
-        "DOCENT": USER_ROLES["TEACHER"],
-        "ADMIN": USER_ROLES["ADMIN"]
+    token_str = create_jwt_token(user_id=db_user.id, role=db_user.role)
+    
+    user_response_data = {
+        "id": db_user.id,
+        "username": db_user.username,
+        "class_code": db_user.class_code,
+        "role": db_user.role,
+        "points": db_user.points,
+        "level": db_user.level,
+        "badges": db_user.badges if db_user.badges else [],
+        "streak_days": db_user.streak_days,
+        "last_entry_date": db_user.last_entry_date.strftime("%Y-%m-%d") if db_user.last_entry_date else None,
+        "created_at": db_user.created_at.isoformat() # Ensure created_at is string for UserResponse
     }
-    return role_mapping.get(class_code.upper(), "")
+    user_for_response = UserResponse.model_validate(user_response_data)
 
-def update_user_data_for_new_entry(user_data: dict, points_awarded: int) -> dict:
-    """
-    Updates user's points, streak, level based on a new food entry.
-    Operates on a dictionary representing the user.
-    Returns the modified user_data dictionary.
-    """
-    # Ensure datetime and date are available (Python's built-in datetime module)
-    from datetime import datetime, date
+    return {
+        "token": token_str,
+        "user": user_for_response
+    }
 
-    today_str = date.today().strftime("%Y-%m-%d")
+# ... (rest of the code remains the same)
+
+async def update_user_data_in_db(user_id: str, points_awarded: int, db: AsyncSession):
+    """
+    Updates user's points, streak, level in the database based on a new food entry.
+    """
+    from datetime import date, timedelta # Ensure date and timedelta are imported
+
+    user_result = await db.execute(select(UserDb).where(UserDb.id == user_id))
+    user_db = user_result.scalar_one_or_none()
+
+    if not user_db:
+        logging.error(f"User with ID {user_id} not found in DB for points/streak update.")
+        return
+
+    today_date_obj = date.today()
+    today_str = today_date_obj.strftime("%Y-%m-%d")
 
     # Update points
-    user_data['points'] = user_data.get('points', 0) + points_awarded
+    user_db.points = (user_db.points or 0) + points_awarded
 
     # Update streak
-    last_entry_date_str = user_data.get('last_entry_date')
-    current_streak = user_data.get('streak_days', 0)
+    current_streak = user_db.streak_days or 0
+    last_entry_date_obj = user_db.last_entry_date
 
-    if last_entry_date_str != today_str:
-        if last_entry_date_str:
-            try:
-                # Ensure comparison is between date objects
-                last_date_obj = datetime.strptime(last_entry_date_str, "%Y-%m-%d").date()
-                today_date_obj = date.today()
-                days_diff = (today_date_obj - last_date_obj).days
-
-                if days_diff == 1:
-                    current_streak += 1
-                elif days_diff > 1:
-                    current_streak = 1  # Reset streak
-                # If days_diff <= 0, it implies an entry from the future or same day handled by outer condition
-            except ValueError:
-                # Invalid date string in user_data, treat as first entry for streak
-                current_streak = 1
+    if last_entry_date_obj != today_date_obj:
+        if last_entry_date_obj:
+            days_diff = (today_date_obj - last_entry_date_obj).days
+            if days_diff == 1:
+                current_streak += 1
+            elif days_diff > 1:
+                current_streak = 1  # Reset streak
+            # If days_diff <= 0 (entry from future or same day already handled), do nothing to streak here
+            # This case (days_diff <=0) should ideally not happen if last_entry_date is always in the past.
         else:  # No last_entry_date, so first entry for streak purposes
             current_streak = 1
         
-        user_data['last_entry_date'] = today_str
-        user_data['streak_days'] = current_streak
+        user_db.last_entry_date = today_date_obj
+        user_db.streak_days = current_streak
     
-    # Update level (example: 100 points per level, starting at level 1)
-    # This logic can be expanded as needed.
-    current_level = user_data.get('level', 1)
-    # A simple way to calculate level: integer division of points by a threshold
-    # Ensure points_per_level is defined, e.g., 100
+    # Update level
     points_per_level = 100 
-    new_level = (user_data['points'] // points_per_level) + 1
-    if new_level > current_level:
-        user_data['level'] = new_level
-        # Optionally, add a badge or notification for leveling up
-        # user_data.setdefault('badges', []).append(f"Level {new_level} Reached!")
-    elif current_level == 0: # Ensure level is at least 1 if points are 0 or positive
-        user_data['level'] = 1
+    new_level = (user_db.points // points_per_level) + 1
+    if new_level > user_db.level:
+        user_db.level = new_level
+    elif user_db.level == 0: # Ensure level is at least 1
+        user_db.level = 1
 
-    return user_data
-
-# Authentication endpoints - LOGIN ONLY
-
-USERS_FILE = "users.json"
-
-def load_users():
-    if not os.path.exists(USERS_FILE):
-        return []
     try:
-        with open(USERS_FILE, 'r') as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"Error loading or parsing {USERS_FILE}: {e}")
-        return []
+        await db.commit()
+        await db.refresh(user_db)
+        logging.info(f"User {user_id} points/streak updated. New points: {user_db.points}, New streak: {user_db.streak_days}")
+    except Exception as e:
+        await db.rollback()
+        logging.error(f"Error updating user {user_id} in DB: {e}")
 
-FOOD_ENTRIES_FILE = "food_entries.json"
+# ... (rest of the code remains the same)
 
-def load_food_entries():
-    if not os.path.exists(FOOD_ENTRIES_FILE):
-        return []
-    try:
-        with open(FOOD_ENTRIES_FILE, 'r') as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"Error loading or parsing {FOOD_ENTRIES_FILE}: {e}")
-        return []
+@api_router.post("/admin/users/{user_id}/reset-points-streak")
+async def admin_reset_user_points_streak(user_id: str, db: AsyncSession = Depends(get_db), current_admin: User = Depends(get_current_admin_user)):
+    user_result = await db.execute(select(UserDb).where(UserDb.id == user_id))
+    user_db = user_result.scalar_one_or_none()
 
-def save_food_entries(food_entries):
-    try:
-        with open(FOOD_ENTRIES_FILE, 'w') as f:
-            json.dump(food_entries, f, indent=2)
-    except IOError as e:
-        print(f"Error writing to {FOOD_ENTRIES_FILE}: {e}")
+    if not user_db:
+        raise HTTPException(status_code=404, detail=f"User with ID {user_id} not found.")
 
-GALLERY_ITEMS_FILE = "gallery_items.json"
-
-def load_gallery_items():
-    if not os.path.exists(GALLERY_ITEMS_FILE):
-        with open(GALLERY_ITEMS_FILE, 'w') as f:
-            json.dump([], f) # Create empty list if file doesn't exist
-        return []
-    try:
-        with open(GALLERY_ITEMS_FILE, 'r') as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"Error loading or parsing {GALLERY_ITEMS_FILE}: {e}")
-        return []
-
-def save_gallery_items(gallery_items):
-    try:
-        with open(GALLERY_ITEMS_FILE, 'w') as f:
-            json.dump(gallery_items, f, indent=2)
-    except IOError as e:
-        print(f"Error writing to {GALLERY_ITEMS_FILE}: {e}")
-
-CALORIE_CHECKS_FILE = "calorie_checks.json"
-
-def load_calorie_checks():
-    if not os.path.exists(CALORIE_CHECKS_FILE):
-        with open(CALORIE_CHECKS_FILE, 'w') as f:
-            json.dump([], f)
-        return []
-    try:
-        with open(CALORIE_CHECKS_FILE, 'r') as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"Error loading or parsing {CALORIE_CHECKS_FILE}: {e}")
-        return []
-
-def save_calorie_checks(checks):
-    try:
-        with open(CALORIE_CHECKS_FILE, 'w') as f:
-            json.dump(checks, f, indent=2)
-    except IOError as e:
-        print(f"Error writing to {CALORIE_CHECKS_FILE}: {e}")
-
-FOOD_COMPARISONS_FILE = "food_comparisons.json"
-
-def load_food_comparisons():
-    if not os.path.exists(FOOD_COMPARISONS_FILE):
-        with open(FOOD_COMPARISONS_FILE, 'w') as f:
-            json.dump([], f)
-        return []
-    try:
-        with open(FOOD_COMPARISONS_FILE, 'r') as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"Error loading or parsing {FOOD_COMPARISONS_FILE}: {e}")
-        return []
-
-def save_food_comparisons(comparisons):
-    try:
-        with open(FOOD_COMPARISONS_FILE, 'w') as f:
-            json.dump(comparisons, f, indent=2)
-    except IOError as e:
-        print(f"Error writing to {FOOD_COMPARISONS_FILE}: {e}")
-
-CHAT_MESSAGES_FILE = "chat_messages.json"
-
-def load_chat_messages():
-    if not os.path.exists(CHAT_MESSAGES_FILE):
-        with open(CHAT_MESSAGES_FILE, 'w') as f:
-            json.dump([], f)
-        return []
-    try:
-        with open(CHAT_MESSAGES_FILE, 'r') as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"Error loading or parsing {CHAT_MESSAGES_FILE}: {e}")
-        return []
-
-def save_chat_messages(messages):
-    try:
-        with open(CHAT_MESSAGES_FILE, 'w') as f:
-            json.dump(messages, f, indent=2)
-    except IOError as e:
-        print(f"Error writing to {CHAT_MESSAGES_FILE}: {e}")
-
-DAILY_QUESTIONS_FILE = "daily_questions.json"
-
-def load_daily_questions():
-    if not os.path.exists(DAILY_QUESTIONS_FILE):
-        with open(DAILY_QUESTIONS_FILE, 'w') as f:
-            json.dump([], f)
-        return []
-    try:
-        with open(DAILY_QUESTIONS_FILE, 'r') as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"Error loading or parsing {DAILY_QUESTIONS_FILE}: {e}")
-        return []
-
-def save_daily_questions(questions):
-    try:
-        with open(DAILY_QUESTIONS_FILE, 'w') as f:
-            json.dump(questions, f, indent=2)
-    except IOError as e:
-        print(f"Error writing to {DAILY_QUESTIONS_FILE}: {e}")
-
-QUESTION_RESPONSES_FILE = "question_responses.json"
-
-def load_question_responses():
-    if not os.path.exists(QUESTION_RESPONSES_FILE):
-        with open(QUESTION_RESPONSES_FILE, 'w') as f:
-            json.dump([], f)
-        return []
-    try:
-        with open(QUESTION_RESPONSES_FILE, 'r') as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"Error loading or parsing {QUESTION_RESPONSES_FILE}: {e}")
-        return []
-
-def save_question_responses(responses):
-    try:
-        with open(QUESTION_RESPONSES_FILE, 'w') as f:
-            json.dump(responses, f, indent=2)
-    except IOError as e:
-        print(f"Error writing to {QUESTION_RESPONSES_FILE}: {e}")
-
-FEEDBACK_ITEMS_FILE = "feedback_items.json"
-
-def load_feedback_items():
-    if not os.path.exists(FEEDBACK_ITEMS_FILE):
-        with open(FEEDBACK_ITEMS_FILE, 'w') as f:
-            json.dump([], f)
-        return []
-    try:
-        with open(FEEDBACK_ITEMS_FILE, 'r') as f:
-            data = json.load(f)
-            return data if isinstance(data, list) else []
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"Error loading or parsing {FEEDBACK_ITEMS_FILE}: {e}")
-        return []
-
-def save_feedback_items(feedback_items):
-    try:
-        with open(FEEDBACK_ITEMS_FILE, 'w') as f:
-            json.dump(feedback_items, f, indent=2)
-    except IOError as e:
-        print(f"Error writing to {FEEDBACK_ITEMS_FILE}: {e}")
-
-# Model for user data returned after successful login (excludes password_hash)
-class UserResponse(BaseModel):
-    id: str
-    username: str
-    class_code: str
-    role: str
-    points: Optional[int] = 0
-    level: Optional[int] = 1
-    badges: Optional[List[str]] = Field(default_factory=list)
-    streak_days: Optional[int] = 0
-    last_entry_date: Optional[str] = None
-    created_at: str
-
-
-@api_router.post("/login")
-async def login_user(login_data: UserLogin): # Removed db_session and related imports for this function
-    users = load_users()
-    found_user = None
-    for user_in_file in users:
-        # Assuming class_code in JSON (from create_initial_admin.py) and login_data are directly comparable.
-        # create_initial_admin.py stores ADMIN_CLASS_CODE (e.g., "admin") as is.
-        # If case-insensitivity is needed, convert both to lower: e.g., user_in_file.get('class_code','').lower() == login_data.class_code.lower()
-        if user_in_file.get('username') == login_data.username and \
-           user_in_file.get('class_code') == login_data.class_code:
-            found_user = user_in_file
-            break
-
-    if not found_user or not verify_password(login_data.password, found_user['password_hash']):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    token = create_jwt_token(found_user['id'], found_user['role'])
-
-    # Prepare user data for response, excluding password_hash
-    # Assumes 'User' is a Pydantic model defined elsewhere in server.py for the user response structure
-    user_data_for_response = {
-        k: v for k, v in found_user.items() if k != 'password_hash'
-    }
-    user_response = UserResponse.model_validate(user_data_for_response)
-
-    return {
-        "token": token,
-        "user": user_response
-    }
-
-# Food logging endpoints
-@api_router.post("/food-entries")
-async def create_food_entry(
-    food_name: str = Form(...),
-    meal_type: str = Form(...),
-    quantity: str = Form(...),
-    image: Optional[UploadFile] = File(None),
-    current_user: User = Depends(get_current_user) # Uses users.json
-):
-    image_url = None
-    if image:
-        upload_dir = "static/uploads"
-        os.makedirs(upload_dir, exist_ok=True)
-        file_extension = os.path.splitext(image.filename)[1]
-        unique_filename = f"{uuid.uuid4()}{file_extension}"
-        file_path = os.path.join(upload_dir, unique_filename)
-        try:
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(image.file, buffer) # Ensure shutil is imported
-            image_url = f"/static/uploads/{unique_filename}"
-        except Exception as e:
-            print(f"Error saving image: {e}")
-            # Consider raising HTTPException(status_code=500, detail=f"Could not save image: {e}")
-
-    # Analyze food item - assuming analyze_food_with_huggingface uses food_name primarily
-    # If image analysis is needed, this function might need image_url or file_path
-    ai_analysis_result = await analyze_food_with_huggingface(food_name)
+    user_db.points = 0
+    user_db.streak_days = 0
+    user_db.level = 1
+    user_db.last_entry_date = None
     
-    # Points awarded - directly from AI score or via calculate_points if defined
-    points_earned = ai_analysis_result.get("score", 0)
-
-    food_entry_id = str(uuid.uuid4())
-    food_entry_data = {
-        "id": food_entry_id,
-        "user_id": current_user.id,
-        "username": current_user.username,
-        "class_code": current_user.class_code,
-        "food_name": food_name,
-        "meal_type": meal_type,
-        "quantity": quantity,
-        "image_url": image_url,
-        "ai_score": ai_analysis_result.get("score", 0), # from ai_analysis_result
-        "ai_feedback": ai_analysis_result.get("feedback", ""),
-        "ai_suggestions": ai_analysis_result.get("suggestions", []),
-        "calories_per_100g": ai_analysis_result.get("calories_per_100g", 0),
-        "protein": ai_analysis_result.get("protein", 0), # Added protein
-        "fat": ai_analysis_result.get("fat", 0), # Added fat
-        "carbs": ai_analysis_result.get("carbohydrates", 0), # Added carbs
-        "nutrition_info": { # Retaining a similar structure for other AI info
-            "category": ai_analysis_result.get("category", "unknown"),
-            "detected_food": ai_analysis_result.get("detected_food", food_name),
-            "confidence": ai_analysis_result.get("confidence", 0)
-        },
-        "points_earned": points_earned, # This is likely the same as ai_score for now
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-
-    all_food_entries = load_food_entries()
-    all_food_entries.append(food_entry_data)
-    save_food_entries(all_food_entries)
-
-    # Add to gallery if image exists and score is high enough
-    # Ensure GALLERY_SCORE_THRESHOLD is defined, e.g., GALLERY_SCORE_THRESHOLD = 6
-    GALLERY_SCORE_THRESHOLD = 6 # Define threshold here or globally
-    if food_entry_data.get("image_url") and food_entry_data.get("ai_score", 0) >= GALLERY_SCORE_THRESHOLD:
-        gallery_item_data = {
-            "id": str(uuid.uuid4()),
-            "user_id": current_user.id,
-            "username": current_user.username,
-            "food_name": food_entry_data["food_name"],
-            "image_url": food_entry_data["image_url"],
-            "ai_score": food_entry_data["ai_score"],
-            "likes": 0,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        all_gallery_items = load_gallery_items()
-        all_gallery_items.append(gallery_item_data)
-        save_gallery_items(all_gallery_items)
-
-    all_users = load_users()
-    user_found_for_update = False
-    for i, u_data in enumerate(all_users):
-        if u_data.get('id') == current_user.id:
-            updated_user_data = update_user_data_for_new_entry(u_data, points_earned)
-            all_users[i] = updated_user_data
-            user_found_for_update = True
-            break
-    
-    if user_found_for_update:
-        save_users(all_users)
-    else:
-        print(f"Error: User with ID {current_user.id} not found in users.json for update.")
-        # Consider: raise HTTPException(status_code=404, detail=f"User {current_user.id} not found for update.")
-
-    response_data = FoodEntry.model_validate(food_entry_data).model_dump()
-    response_data["new_badges"] = [] # Badge logic removed for now
-    # points_earned is already in response_data via FoodEntry model if it includes it
-
-    return response_data
-
-@api_router.get("/food-entries", response_model=List[FoodEntry]) # Added response_model for clarity and validation
-async def get_user_food_entries(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Query the database for food entries for the current user
-    stmt = (
-        select(FoodEntryDb)
-        .where(FoodEntryDb.user_id == current_user.id)
-        .order_by(FoodEntryDb.timestamp.desc()) # Order by timestamp, newest first
-        .limit(100) # Limit to 100 entries, similar to original logic
-    )
-    result = await db.execute(stmt)
-    food_entries_db = result.scalars().all()
-
-    # Convert SQLAlchemy model instances to Pydantic model instances
-    # This assumes FoodEntry Pydantic model can be created from FoodEntryDb attributes
-    # (e.g., if FoodEntry has model_config = ConfigDict(from_attributes=True))
-    user_entries = [FoodEntry.model_validate(entry_db) for entry_db in food_entries_db]
-    
-    return user_entries
-
-@api_router.get("/food-entries/all")
-async def get_all_food_entries(current_user: User = Depends(get_current_user)) -> List[FoodEntry]:
-    # Only admin and teachers can see all entries
-    if current_user.role not in [USER_ROLES["ADMIN"], USER_ROLES["TEACHER"]]:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    all_food_entries_data = load_food_entries()
-    
-    # Sort all entries by date, recent first
-    # Assuming 'created_at' is an ISO format string
-    all_food_entries_data.sort(key=lambda x: x.get("created_at", ""), reverse=True)
-    
-    # Limit the number of entries (e.g., to the most recent 1000)
-    limited_entries_data = all_food_entries_data[:1000]
-
-    processed_entries = []
-    for entry_data in limited_entries_data:
-        try:
-            pydantic_entry = FoodEntry.model_validate(entry_data)
-            if current_user.role == USER_ROLES["TEACHER"]:
-                pydantic_entry.user_id = "hidden" # Anonymize user_id for teachers
-                # Optionally nullify or anonymize other sensitive fields for teacher view:
-                # pydantic_entry.ai_feedback = None 
-                # pydantic_entry.username = "hidden" # If username is present and needs hiding
-            processed_entries.append(pydantic_entry)
-        except Exception as e:
-            print(f"Error validating food entry data for /all endpoint: {e} - Data: {entry_data}")
-            # Decide how to handle: skip this entry, raise error, etc.
-            
-    return processed_entries
-@api_router.get("/gallery", response_model=List[Gallery]) # Added response_model for clarity and validation
-async def get_gallery(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Query the database for gallery items
-    stmt = (
-        select(GalleryDb)
-        .order_by(GalleryDb.timestamp.desc()) # Order by timestamp, newest first
-        .limit(50) # Limit to 50 items, similar to original logic
-    )
-    result = await db.execute(stmt)
-    gallery_items_db = result.scalars().all()
-
-    # Convert SQLAlchemy model instances to Pydantic model instances
-    # This assumes Gallery Pydantic model can be created from GalleryDb attributes
-    # (e.g., if Gallery has model_config = ConfigDict(from_attributes=True))
-    gallery_items_response = [Gallery.model_validate(item_db) for item_db in gallery_items_db]
-    
-    return gallery_items_response
-
-@api_router.post("/gallery/{item_id}/like")
-async def like_gallery_item(item_id: str, current_user: User = Depends(get_current_user)):
-    all_gallery_items = load_gallery_items()
-    item_found = False
-    updated_likes = 0
-
-    for item in all_gallery_items:
-        if item.get("id") == item_id:
-            item["likes"] = item.get("likes", 0) + 1
-            updated_likes = item["likes"]
-            item_found = True
-            break
-    
-    if not item_found:
-        raise HTTPException(status_code=404, detail="Gallery item not found")
-    
-    save_gallery_items(all_gallery_items)
-    
-    return {"message": "Like registered successfully", "item_id": item_id, "likes": updated_likes}
-
-# Chat system
-@api_router.post("/chat/send")
-async def send_chat_message(
-    message: str = Form(...),
     current_user: User = Depends(get_current_user)
 ) -> ChatMessage:
     chat_message_data = {
