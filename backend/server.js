@@ -18,6 +18,7 @@ const EDAMAM_API_URL = 'https://api.edamam.com/api/food-database/v2/parser';
 
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
 const FOOD_IMAGES_DIR = path.join(UPLOADS_DIR, 'food_images');
+const GALLERY_IMAGES_DIR = path.join(UPLOADS_DIR, 'gallery_images');
 
 const USERS_FILE_PATH = path.join(__dirname, 'users_node.json');
 const FOOD_ENTRIES_FILE_PATH = path.join(__dirname, 'food_entries.json');
@@ -36,7 +37,8 @@ const app = express();
 // --- MIDDLEWARE ---
 app.use(cors());
 app.use(express.json());
-app.use('/uploads/food_images', express.static(FOOD_IMAGES_DIR)); // Serve uploaded images
+app.use('/uploads/food_images', express.static(FOOD_IMAGES_DIR)); // Serve uploaded food images
+app.use('/uploads/gallery_images', express.static(GALLERY_IMAGES_DIR)); // Serve uploaded gallery images
 
 // Multer setup for file uploads
 const storage = multer.diskStorage({
@@ -49,6 +51,18 @@ const storage = multer.diskStorage({
     }
 });
 const upload = multer({ storage: storage });
+
+// Multer setup for gallery image uploads
+const galleryStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        fs.ensureDirSync(GALLERY_IMAGES_DIR); // Ensure directory exists
+        cb(null, GALLERY_IMAGES_DIR);
+    },
+    filename: function (req, file, cb) {
+        cb(null, uuidv4() + path.extname(file.originalname));
+    }
+});
+const galleryUpload = multer({ storage: galleryStorage });
 
 // --- HELPER FUNCTIONS ---
 const readData = async (filePath) => {
@@ -802,6 +816,75 @@ adminRouter.post('/users/:userId/update-points', async (req, res) => {
 apiRouter.use('/admin', adminRouter); // Mount admin router under /api/admin
 app.use('/api', apiRouter); // Mount main API router
 
+// Constants for gallery
+const GALLERY_ITEMS_FILE_PATH = path.join(DATA_DIR, 'gallery_items.json');
+const GALLERY_IMAGES_DIR = path.join(UPLOADS_DIR, 'gallery_images');
+
+// Static serving for gallery images
+app.use('/uploads/gallery_images', express.static(GALLERY_IMAGES_DIR));
+
+// Multer config for gallery image uploads
+const galleryUpload = multer({
+    dest: GALLERY_IMAGES_DIR,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+    fileFilter(req, file, cb) {
+        if (!file.originalname.match(/\.(jpg|jpeg|png)$/)) {
+            return cb(new Error('Only image files are allowed!'));
+        }
+        cb(undefined, true);
+    }
+});
+
+// --- GALLERY ---
+apiRouter.get('/gallery', async (req, res) => {
+    try {
+        const galleryItems = await readData(GALLERY_ITEMS_FILE_PATH);
+        // Sort by timestamp, newest first
+        const sortedItems = galleryItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        res.json(sortedItems);
+    } catch (error) {
+        console.error('Error fetching gallery items:', error);
+        res.status(500).json({ detail: 'Failed to fetch gallery items.' });
+    }
+});
+
+apiRouter.post('/gallery/upload', authenticateToken, galleryUpload.single('galleryImage'), async (req, res) => {
+    const { title } = req.body;
+    const userId = req.user.userId;
+    const username = req.user.username;
+
+    if (!req.file) {
+        return res.status(400).json({ detail: 'No image file provided.' });
+    }
+
+    const newGalleryItem = {
+        id: uuidv4(),
+        filename: req.file.filename,
+        imageUrl: `/uploads/gallery_images/${req.file.filename}`,
+        title: title || 'Geen titel',
+        uploaderId: userId,
+        uploaderUsername: username,
+        timestamp: new Date().toISOString(),
+        likes: 0 // Initialize likes
+    };
+
+    try {
+        const galleryItems = await readData(GALLERY_ITEMS_FILE_PATH);
+        galleryItems.push(newGalleryItem);
+        await writeData(GALLERY_ITEMS_FILE_PATH, galleryItems);
+        res.status(201).json(newGalleryItem);
+    } catch (error) {
+        console.error('Error saving gallery item:', error);
+        // Attempt to delete uploaded file if DB save fails to prevent orphaned files
+        try {
+            await fs.unlink(path.join(GALLERY_IMAGES_DIR, req.file.filename));
+        } catch (unlinkError) {
+            console.error('Error deleting orphaned gallery file after save failure:', unlinkError);
+        }
+        res.status(500).json({ detail: 'Failed to save gallery item.' });
+    }
+});
+
 // --- QUESTIONS API ---
 apiRouter.get('/questions', authenticateToken, async (req, res) => {
     try {
@@ -891,6 +974,7 @@ const initializeApp = async () => {
         // Ensure upload directories exist
         await fs.ensureDir(UPLOADS_DIR);
         await fs.ensureDir(FOOD_IMAGES_DIR);
+        await fs.ensureDir(GALLERY_IMAGES_DIR);
 
         // Ensure JSON data files exist
         const filesToInitialize = [
