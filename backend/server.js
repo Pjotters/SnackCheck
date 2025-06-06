@@ -816,28 +816,11 @@ adminRouter.post('/users/:userId/update-points', async (req, res) => {
 apiRouter.use('/admin', adminRouter); // Mount admin router under /api/admin
 app.use('/api', apiRouter); // Mount main API router
 
-// Constants for gallery
-const GALLERY_ITEMS_FILE_PATH = path.join(DATA_DIR, 'gallery_items.json');
-const GALLERY_IMAGES_DIR = path.join(UPLOADS_DIR, 'gallery_images');
-
-// Static serving for gallery images
-app.use('/uploads/gallery_images', express.static(GALLERY_IMAGES_DIR));
-
-// Multer config for gallery image uploads
-const galleryUpload = multer({
-    dest: GALLERY_IMAGES_DIR,
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
-    fileFilter(req, file, cb) {
-        if (!file.originalname.match(/\.(jpg|jpeg|png)$/)) {
-            return cb(new Error('Only image files are allowed!'));
-        }
-        cb(undefined, true);
-    }
-});
 
 // --- GALLERY ---
 apiRouter.get('/gallery', async (req, res) => {
     try {
+        // Use GALLERY_ITEMS_FILE_PATH defined at the top
         const galleryItems = await readData(GALLERY_ITEMS_FILE_PATH);
         // Sort by timestamp, newest first
         const sortedItems = galleryItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -848,6 +831,7 @@ apiRouter.get('/gallery', async (req, res) => {
     }
 });
 
+// Use galleryUpload defined at the top
 apiRouter.post('/gallery/upload', authenticateToken, galleryUpload.single('galleryImage'), async (req, res) => {
     const { title } = req.body;
     const userId = req.user.userId;
@@ -859,7 +843,7 @@ apiRouter.post('/gallery/upload', authenticateToken, galleryUpload.single('galle
 
     const newGalleryItem = {
         id: uuidv4(),
-        filename: req.file.filename,
+        filename: req.file.filename, // filename from multer
         imageUrl: `/uploads/gallery_images/${req.file.filename}`,
         title: title || 'Geen titel',
         uploaderId: userId,
@@ -876,6 +860,7 @@ apiRouter.post('/gallery/upload', authenticateToken, galleryUpload.single('galle
     } catch (error) {
         console.error('Error saving gallery item:', error);
         // Attempt to delete uploaded file if DB save fails to prevent orphaned files
+        // Use GALLERY_IMAGES_DIR defined at the top
         try {
             await fs.unlink(path.join(GALLERY_IMAGES_DIR, req.file.filename));
         } catch (unlinkError) {
