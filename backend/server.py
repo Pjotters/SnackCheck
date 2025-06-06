@@ -169,6 +169,7 @@ app = FastAPI(title="SnackCheck Research Platform", version="3.0.0")
 # CORS Middleware Configuration
 origins = [
     "https://onderzoek-snackcheck.vercel.app",  # Vercel frontend
+     "https://snackcheck-opal.vercel.app",   
     "http://localhost:3000",  # Local React development
     "http://127.0.0.1:3000", # Local React development
     # Add other origins if needed
@@ -1837,14 +1838,6 @@ async def on_startup():
 
 # Include the router in the main app
 app.include_router(api_router)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # Configure logging
 logging.basicConfig(
