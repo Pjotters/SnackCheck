@@ -37,7 +37,7 @@ const FoodEntryForm = ({ onEntryAdded }) => {
     }
 
     try {
-      const response = await axios.post(`${API}/food-entry`, formData, {
+      const response = await axios.post(`${API}/food-entries`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
