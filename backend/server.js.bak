@@ -639,30 +639,62 @@ apiRouter.get('/gallery', authenticateToken, async (req, res) => {
         res.status(500).json({ detail: 'Failed to fetch gallery items' });
     }
 });
-
-// --- USER PROFILE ---
-apiRouter.get('/users/me', authenticateToken, async (req, res) => {
+    }
+    
     try {
         const users = await readData(USERS_FILE_PATH);
-        const user = users.find(u => u.id === req.user.userId);
-        
+        const user = users.find(u => u.username === username && u.class_code === class_code);
+
         if (!user) {
-            return res.status(404).json({ detail: 'Gebruiker niet gevonden' });
+            return res.status(401).json({ detail: 'Ongeldige gebruikersnaam of klascode' });
         }
         
-        // Verwijder gevoelige gegevens voordat we de gebruikersgegevens terugsturen
-        const { password, ...userData } = user;
+        // Controleer wachtwoord met bcrypt
+        const isPasswordValid = await bcrypt.compare(password, user.password);
         
-        res.json({
-            ...userData,
-            points: userData.points || 0,
-            level: userData.level || 1,
-            streak_days: userData.streak_days || 0,
-            badges: userData.badges || []
+        if (!isPasswordValid) {
+            return res.status(401).json({ detail: 'Ongeldig wachtwoord' });
+        }
+
+        const accessToken = jwt.sign(
+            { 
+                userId: user.id, 
+                username: user.username, 
+                role: user.role,
+                class_code: user.class_code
+            }, 
+            SECRET_KEY, 
+            { expiresIn: '24h' }
+        );
+        
+        res.json({ 
+            token: accessToken,
+            user: {
+                id: user.id,
+                username: user.username,
+                role: user.role,
+                class_code: user.class_code,
+                points: user.points || 0,
+                level: user.level || 1,
+                streak_days: user.streak_days || 0,
+                last_submission_date: user.last_submission_date,
+                badges: user.badges || []
+            }
         });
     } catch (error) {
-        console.error('Error fetching user profile:', error);
-        res.status(500).json({ detail: 'Er is een fout opgetreden bij het ophalen van het gebruikersprofiel' });
+        console.error('Login error:', error);
+        res.status(500).json({ detail: 'Er is een fout opgetreden bij het inloggen' });
+    }
+});
+
+apiRouter.get('/users/me', authenticateToken, async (req, res) => {
+    const users = await readData(USERS_FILE_PATH);
+    const user = users.find(u => u.id === req.user.userId);
+    if (user) {
+        const { password, ...userData } = user; // Exclude password
+        res.json(userData);
+    } else {
+        res.status(404).json({ detail: 'User not found' });
     }
 });
 
