@@ -204,6 +204,7 @@ async function transformAiAnalysis(rawAnalysisResult, foodName, quantity) {
     let detectedFoodByAI = foodName; // Default to user input
     let confidence = 0;
     let nutritionData = null;
+    let newBadges = []; // Initialize empty array for badges
 
     if (rawAnalysisResult && Array.isArray(rawAnalysisResult) && rawAnalysisResult.length > 0) {
         detectedFoodByAI = rawAnalysisResult[0].label.split(',')[0].trim(); // Neem eerste label, trim spaties
@@ -226,7 +227,6 @@ async function transformAiAnalysis(rawAnalysisResult, foodName, quantity) {
     let pointsEarned = 2; // Basispunten voor loggen
     let feedback = `Je hebt ${foodName} gelogd.`;
     let suggestions = "Probeer de volgende keer een foto te maken voor een specifiekere analyse!";
-    let newBadges = [];
     let nutritionInfo = {
         detected_food: detectedFoodByAI,
         ai_confidence: confidence, // Confidence van HuggingFace
@@ -287,24 +287,28 @@ async function transformAiAnalysis(rawAnalysisResult, foodName, quantity) {
 
 // Function for getting nutritional info (for calorie checker & food comparison)
 async function getNutritionalInfo(foodName, quantity = 1) {
-    const nutritionData = await fetchNutritionFromEdamam(foodName);
+    try {
+        const nutritionData = await fetchNutritionFromEdamam(foodName);
 
-    if (nutritionData) {
-        return {
-            food_name: nutritionData.label || foodName, // Gebruik Edamam label indien beschikbaar
-            quantity: quantity,
-            calories_per_100g: nutritionData.calories,
-            protein_per_100g: nutritionData.protein,
-            fat_per_100g: nutritionData.fat,
-            carbs_per_100g: nutritionData.carbs,
-            estimated_calories: parseFloat((nutritionData.calories * quantity).toFixed(1)), // Stel quantity is in 100g eenheden
-            source: 'Edamam API',
-            feedback: `Details voor ${nutritionData.label || foodName} (${nutritionData.calories} kcal/100g).`
-        };
-    } else {
-        // Fallback als Edamam geen data vindt
-        console.warn(`No Edamam data for ${foodName} in getNutritionalInfo. Returning placeholder.`);
-        const randomCalories = Math.floor(Math.random() * 250) + 50; // 50-300
+        if (nutritionData) {
+            return {
+                food_name: nutritionData.label || foodName, // Gebruik Edamam label indien beschikbaar
+                quantity: quantity,
+                calories_per_100g: nutritionData.calories,
+                protein_per_100g: nutritionData.protein,
+                fat_per_100g: nutritionData.fat,
+                carbs_per_100g: nutritionData.carbs,
+                estimated_calories: parseFloat((nutritionData.calories * quantity).toFixed(1)),
+                source: 'Edamam',
+                feedback: `Voedingsinformatie voor ${nutritionData.label || foodName} (${quantity}x)`,
+                ai_score: 80, // Standaard score
+                new_badges: [] // Lege array om fouten te voorkomen
+            };
+        }
+    } catch (error) {
+        console.error('Error fetching nutritional info:', error);
+        // Fallback als de API niet beschikbaar is of een fout geeft
+        const randomCalories = Math.floor(Math.random() * 300) + 50; // Willekeurige waarde tussen 50-350 kcal/100g
         return {
             food_name: foodName,
             quantity: quantity,
@@ -314,13 +318,92 @@ async function getNutritionalInfo(foodName, quantity = 1) {
             carbs_per_100g: null,
             estimated_calories: parseFloat((randomCalories * quantity).toFixed(1)),
             source: 'Placeholder (Edamam lookup failed)',
-            feedback: `Kon geen gedetailleerde voedingsinformatie vinden voor ${foodName}. Schatting is ${randomCalories} kcal/100g.`
+            feedback: `Kon geen gedetailleerde voedingsinformatie vinden voor ${foodName}. Schatting is ${randomCalories} kcal/100g.`,
+            ai_score: 60, // Lagere score voor schattingen
+            new_badges: [] // Lege array om fouten te voorkomen
         };
     }
 }
 
 // --- API ROUTES ---
 const apiRouter = express.Router();
+
+// --- QUESTIONS ---
+// Get all questions (without correct answers)
+apiRouter.get('/questions', authenticateToken, async (req, res) => {
+    try {
+        const questions = await readData(QUESTIONS_FILE_PATH);
+        // Remove correct_answers and explanation from response
+        const questionsWithoutAnswers = questions.map(({ correct_answers, explanation, ...rest }) => rest);
+        res.json(questionsWithoutAnswers);
+    } catch (error) {
+        console.error('Error fetching questions:', error);
+        res.status(500).json({ detail: 'Failed to fetch questions' });
+    }
+});
+
+// Submit answers to questions
+apiRouter.post('/questions/submit', authenticateToken, async (req, res) => {
+    try {
+        const { answers } = req.body; // Array of { question_id, answers: [] }
+        if (!Array.isArray(answers)) {
+            return res.status(400).json({ detail: 'Answers should be an array' });
+        }
+
+        const questions = await readData(QUESTIONS_FILE_PATH);
+        const results = [];
+        let totalCorrect = 0;
+
+        // Process each submitted answer
+        for (const answer of answers) {
+            const question = questions.find(q => q.id === answer.question_id);
+            if (!question) continue;
+
+            // Check if answers are correct (order doesn't matter)
+            const isCorrect = 
+                answer.answers.length === question.correct_answers.length &&
+                answer.answers.every(ans => question.correct_answers.includes(ans));
+
+            if (isCorrect) {
+                totalCorrect++;
+            }
+
+            results.push({
+                question_id: question.id,
+                is_correct: isCorrect,
+                correct_answers: question.correct_answers,
+                explanation: question.explanation
+            });
+        }
+
+        // Calculate points (5 points per correct answer)
+        const pointsEarned = totalCorrect * POINTS_PER_CORRECT_QUESTION;
+        
+        // Update user points
+        if (pointsEarned > 0) {
+            const users = await readData(USERS_FILE_PATH);
+            const userIndex = users.findIndex(u => u.id === req.user.userId);
+            
+            if (userIndex !== -1) {
+                users[userIndex].points = (users[userIndex].points || 0) + pointsEarned;
+                users[userIndex].level = calculateUserLevel(users[userIndex].points);
+                await writeData(USERS_FILE_PATH, users);
+            }
+        }
+
+        // Return results and points
+        res.json({
+            results,
+            total_correct: totalCorrect,
+            total_questions: answers.length,
+            points_earned: pointsEarned
+        });
+
+    } catch (error) {
+        console.error('Error submitting answers:', error);
+        res.status(500).json({ detail: 'Failed to process answers' });
+    }
+});
 
 // --- AUTHENTICATION ---
 apiRouter.post('/login', async (req, res) => {
@@ -689,7 +772,7 @@ apiRouter.post('/food-entries', authenticateToken, upload.single('image'), async
         }
     }
 
-    const transformedAiResult = transformAiAnalysis(rawAiOutput.result, food_name, parseFloat(quantity) || 1);
+    const transformedAiResult = await transformAiAnalysis(rawAiOutput.result, food_name, parseFloat(quantity) || 1);
 
     const newEntry = {
         id: uuidv4(),
@@ -725,8 +808,10 @@ apiRouter.post('/food-entries', authenticateToken, upload.single('image'), async
         users[userIndex].level = calculateUserLevel(users[userIndex].points);
         
         const currentBadges = new Set(users[userIndex].badges || []);
-        transformedAiResult.new_badges.forEach(badge => currentBadges.add(badge));
-        users[userIndex].badges = Array.from(currentBadges);
+        if (transformedAiResult && Array.isArray(transformedAiResult.new_badges)) {
+            transformedAiResult.new_badges.forEach(badge => currentBadges.add(badge));
+            users[userIndex].badges = Array.from(currentBadges);
+        }
 
         await writeData(USERS_FILE_PATH, users);
     }

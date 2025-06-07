@@ -1,0 +1,67 @@
+[
+  {
+    "id": 1,
+    "question": "Wat is de aanbevolen dagelijkse hoeveelheid groente voor volwassenen?",
+    "options": [
+      {"id": "a", "text": "150 gram"},
+      {"id": "b", "text": "250 gram"},
+      {"id": "c", "text": "350 gram"},
+      {"id": "d", "text": "500 gram"}
+    ],
+    "correct_answers": ["b"],
+    "explanation": "Volgens het Voedingscentrum is de aanbevolen dagelijkse hoeveelheid groente 250 gram voor volwassenen.",
+    "category": "Gezonde voeding"
+  },
+  {
+    "id": 2,
+    "question": "Welke van de volgende voedingsmiddelen bevatten veel toegevoegde suikers?",
+    "options": [
+      {"id": "a", "text": "Vers fruit"},
+      {"id": "b", "text": "Frisdrank"},
+      {"id": "c", "text": "Yoghurt met smaakje"},
+      {"id": "d", "text": "Koekjes"}
+    ],
+    "correct_answers": ["b", "c", "d"],
+    "explanation": "Frisdrank, gezoete zuivelproducten zoals yoghurt met smaakje en koekjes bevatten vaak veel toegevoegde suikers. Vers fruit bevat van nature aanwezige suikers.",
+    "category": "Suikers"
+  },
+  {
+    "id": 3,
+    "question": "Hoeveel water zou een volwassene gemiddeld per dag moeten drinken?",
+    "options": [
+      {"id": "a", "text": "0,5 - 1 liter"},
+      {"id": "b", "text": "1,5 - 2 liter"},
+      {"id": "c", "text": "2,5 - 3 liter"},
+      {"id": "d", "text": "Meer dan 3 liter"}
+    ],
+    "correct_answers": ["b"],
+    "explanation": "Volwassenen wordt aangeraden om ongeveer 1,5 tot 2 liter vocht per dag te drinken, bij voorkeur in de vorm van water, thee of koffie zonder suiker.",
+    "category": "Hydratatie"
+  },
+  {
+    "id": 4,
+    "question": "Welke van deze voedingsmiddelen zijn goede bronnen van eiwitten?",
+    "options": [
+      {"id": "a", "text": "Kipfilet"},
+      {"id": "b", "text": "Linzen"},
+      {"id": "c", "text": "Witte rijst"},
+      {"id": "d", "text": "Kwark"}
+    ],
+    "correct_answers": ["a", "b", "d"],
+    "explanation": "Kipfilet, linzen en kwark zijn allemaal goede bronnen van eiwitten. Witte rijst bevat voornamelijk koolhydraten en weinig eiwitten.",
+    "category": "Eiwitten"
+  },
+  {
+    "id": 5,
+    "question": "Wat is een gezonde portiegrootte voor een tussendoortje?",
+    "options": [
+      {"id": "a", "text": "Ongeveer 100 calorieën"},
+      {"id": "b", "text": "Ongeveer 200 calorieën"},
+      {"id": "c", "text": "Ongeveer 300 calorieën"},
+      {"id": "d", "text": "Zoveel je wilt, als het maar gezond is"}
+    ],
+    "correct_answers": ["a"],
+    "explanation": "Een gezond tussendoortje bevat bij voorkeur niet meer dan 100 calorieën. Denk aan een stuk fruit, een handje noten of een schaaltje magere yoghurt.",
+    "category": "Portiegroottes"
+  }
+]

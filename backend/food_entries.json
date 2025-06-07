@@ -1,1 +1,69 @@
-[]
+[
+  {
+    "id": "a5fa8d94-18af-4754-b9a2-8d35467457cc",
+    "userId": "57a596a1-ad09-4244-9cd8-67841bc0aa8b",
+    "username": "docent",
+    "food_name": "test",
+    "meal_type": "snack",
+    "quantity": 1,
+    "image_url": null,
+    "timestamp": "2025-06-07T10:39:37.401Z",
+    "ai_analysis_result": {}
+  },
+  {
+    "id": "83ac60e0-7871-4b56-bfc2-80fde19fc4b7",
+    "userId": "57a596a1-ad09-4244-9cd8-67841bc0aa8b",
+    "username": "docent",
+    "food_name": "appel",
+    "meal_type": "snack",
+    "quantity": 1,
+    "image_url": null,
+    "timestamp": "2025-06-07T10:41:20.749Z",
+    "ai_analysis_result": {}
+  },
+  {
+    "id": "2324a733-c6c7-429d-9af1-e6b37a7f2b58",
+    "userId": "57a596a1-ad09-4244-9cd8-67841bc0aa8b",
+    "username": "docent",
+    "food_name": "appel",
+    "meal_type": "snack",
+    "quantity": 1,
+    "image_url": null,
+    "timestamp": "2025-06-07T10:42:16.856Z",
+    "ai_analysis_result": {}
+  },
+  {
+    "id": "10afd5fb-44aa-4aa0-8893-e46634e7e79c",
+    "userId": "57a596a1-ad09-4244-9cd8-67841bc0aa8b",
+    "username": "docent",
+    "food_name": "appel",
+    "meal_type": "snack",
+    "quantity": 1,
+    "image_url": null,
+    "timestamp": "2025-06-07T10:43:08.255Z",
+    "ai_analysis_result": {}
+  },
+  {
+    "id": "d1dc7e26-bbb8-4a4c-bf8d-6543b681d302",
+    "userId": "57a596a1-ad09-4244-9cd8-67841bc0aa8b",
+    "username": "docent",
+    "food_name": "banaan",
+    "meal_type": "snack",
+    "quantity": 1,
+    "image_url": null,
+    "timestamp": "2025-06-07T10:45:17.128Z",
+    "ai_analysis_result": {
+      "points_earned": 2,
+      "ai_score": 5,
+      "calories_estimated": 150,
+      "nutrition_info": {
+        "detected_food": "banaan",
+        "ai_confidence": 0,
+        "source": "placeholder"
+      },
+      "ai_feedback": "Je hebt banaan gelogd.",
+      "ai_suggestions": "Probeer de volgende keer een foto te maken voor een specifiekere analyse!",
+      "new_badges": []
+    }
+  }
+]

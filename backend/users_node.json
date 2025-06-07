@@ -1,1 +1,106 @@
-[]
+[
+  {
+    "id": "c6f14da5-2f9b-4725-b166-6f81cd567f90",
+    "username": "leerling1a",
+    "password": "$2b$10$SvmdVi5mwISvRH3Mw.1PN.tPVGNXOuHEa0WCOvBAn80szl3ellvY.",
+    "class_code": "KlasA",
+    "role": "student",
+    "points": 92,
+    "level": 1,
+    "streak_days": 7,
+    "last_submission_date": "2025-06-07",
+    "badges": [],
+    "created_at": "2025-06-07T10:36:51.205Z"
+  },
+  {
+    "id": "bc338626-c0f2-4368-b77d-09a33d760f9e",
+    "username": "leerling2a",
+    "password": "$2b$10$lezQgUXSqkWQ/8eDyjLKLeHLD3BCmw8UA9B8rSuG/Z62T2BGT/Zia",
+    "class_code": "KlasA",
+    "role": "student",
+    "points": 12,
+    "level": 1,
+    "streak_days": 8,
+    "last_submission_date": "2025-06-07",
+    "badges": [],
+    "created_at": "2025-06-07T10:36:51.260Z"
+  },
+  {
+    "id": "768c309d-c1f5-4081-ab2e-ff0cd84af165",
+    "username": "leerling3a",
+    "password": "$2b$10$8IFWEJFc7JbnctQ3t4.pLuqCCEsvE2PzWL6BPAOf7OIOg1Qt6JNku",
+    "class_code": "KlasA",
+    "role": "student",
+    "points": 92,
+    "level": 1,
+    "streak_days": 7,
+    "last_submission_date": "2025-06-07",
+    "badges": [],
+    "created_at": "2025-06-07T10:36:51.315Z"
+  },
+  {
+    "id": "7260b475-d0c6-443a-ac5a-0bf4da32bfde",
+    "username": "leerling1b",
+    "password": "$2b$10$HPhEnYPKncbCyztTENPBYeVWSjylpsG4BxThkJNO4XQiBirGzuVZ.",
+    "class_code": "KlasB",
+    "role": "student",
+    "points": 93,
+    "level": 1,
+    "streak_days": 6,
+    "last_submission_date": "2025-06-07",
+    "badges": [],
+    "created_at": "2025-06-07T10:36:51.370Z"
+  },
+  {
+    "id": "4b6fd851-2db9-487c-bef4-d933d982260e",
+    "username": "leerling2b",
+    "password": "$2b$10$xvVWEHtD1yEQtIicwvy33O43lFd.XsTEUHubKdgwWrWp15KPaIRRO",
+    "class_code": "KlasB",
+    "role": "student",
+    "points": 58,
+    "level": 1,
+    "streak_days": 2,
+    "last_submission_date": "2025-06-07",
+    "badges": [],
+    "created_at": "2025-06-07T10:36:51.424Z"
+  },
+  {
+    "id": "1dada395-b7ff-4039-8a31-3e2295e29fed",
+    "username": "leerling1c",
+    "password": "$2b$10$AjPY0MOUC3TYwoYXtcc.guFNpL07MUr2JZb0bU2NT/7DUQ.14ymyK",
+    "class_code": "KlasC",
+    "role": "student",
+    "points": 24,
+    "level": 1,
+    "streak_days": 6,
+    "last_submission_date": "2025-06-07",
+    "badges": [],
+    "created_at": "2025-06-07T10:36:51.480Z"
+  },
+  {
+    "id": "b1d4aadf-4ec6-478d-a552-d4fc70d20d2b",
+    "username": "leerling2c",
+    "password": "$2b$10$jD6uUYKUwOtzVNPEnMSrnuMXWmrlHafp9Luo/BuvYvrWRWSc3NyRO",
+    "class_code": "KlasC",
+    "role": "student",
+    "points": 14,
+    "level": 1,
+    "streak_days": 3,
+    "last_submission_date": "2025-06-07",
+    "badges": [],
+    "created_at": "2025-06-07T10:36:51.536Z"
+  },
+  {
+    "id": "57a596a1-ad09-4244-9cd8-67841bc0aa8b",
+    "username": "docent",
+    "password": "$2b$10$NofllrOC07yAgiz0dd2EruhRMslV78oe2sRXjXTlWQrdtcXo65nn6",
+    "class_code": "KlasA",
+    "role": "admin",
+    "points": 27,
+    "level": 1,
+    "streak_days": 7,
+    "last_submission_date": "2025-06-07T10:45:17.130Z",
+    "badges": [],
+    "created_at": "2025-06-07T10:36:51.596Z"
+  }
+]
