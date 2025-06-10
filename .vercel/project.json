@@ -1,0 +1,11 @@
+{
+  "orgId": "team_123",
+  "projectId": "prj_123",
+  "settings": {
+    "nodeVersion": "18.x",
+    "buildCommand": "./build.sh",
+    "outputDirectory": "build",
+    "installCommand": "yarn install --frozen-lockfile",
+    "framework": "create-react-app"
+  }
+}

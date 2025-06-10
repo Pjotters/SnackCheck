@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "package.json",
+      "src": "build.sh",
       "use": "@vercel/static-build",
       "config": {
         "distDir": "build"
@@ -11,11 +11,6 @@
   ],
   "routes": [
     { "handle": "filesystem" },
-    { "src": "/.*", "dest": "/index.html" }
-  ],
-  "build": {
-    "env": {
-      "NODE_VERSION": "18.x"
-    }
-  }
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
 }
