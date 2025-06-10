@@ -49,6 +49,15 @@ export const isAuthenticated = () => {
   return !!localStorage.getItem('token');
 };
 
+// Functie om auth headers op te halen
+export const getAuthHeaders = () => {
+  const token = localStorage.getItem('token');
+  return {
+    'Authorization': token ? `Bearer ${token}` : '',
+    'Content-Type': 'application/json'
+  };
+};
+
 // Functie om te controleren of gebruiker admin is
 export const isAdmin = () => {
   const user = getCurrentUser();
