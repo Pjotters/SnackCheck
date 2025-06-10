@@ -137,7 +137,7 @@ const Gallery = () => {
       )}
       {!loading && !error && images.length === 0 && (
         <p className="text-center text-gray-500 py-10">
-          Er zijn nog geen afbeeldingen in de galerij. Upload de eerste!
+          Er zijn nog geen afbeeldingen in de galerij. Upload de eerste en krijg punten!
         </p>
       )}
       {!loading && !error && images.length > 0 && (
