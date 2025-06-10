@@ -37,31 +37,31 @@ const FoodEntriesList = ({ entries }) => {
               <div>
                 <p className="text-md text-gray-700">
                   Geschatte calorieën:
-                  <span className={`font-bold ml-1 ${entry.calories_estimated > 500 ? 'text-red-500' : 'text-green-600'}`}>
-                    {entry.calories_estimated != null ? `${entry.calories_estimated} kcal` : 'N/A'}
+                  <span className={`font-bold ml-1 ${entry.ai_analysis_result?.calories_estimated > 500 ? 'text-red-500' : 'text-green-600'}`}>
+                    {entry.ai_analysis_result?.calories_estimated != null ? `${entry.ai_analysis_result.calories_estimated} kcal` : 'N/A'}
                   </span>
                 </p>
               </div>
-              {entry.ai_score != null && (
+              {entry.ai_analysis_result?.ai_score != null && (
                 <div>
-                  <p className={`text-md font-semibold ${entry.ai_score >= 7 ? 'text-green-700' : entry.ai_score >= 4 ? 'text-yellow-600' : 'text-red-700'}`}>
-                    AI Score: {entry.ai_score}/10
+                  <p className={`text-md font-semibold ${entry.ai_analysis_result.ai_score >= 7 ? 'text-green-700' : entry.ai_analysis_result.ai_score >= 4 ? 'text-yellow-600' : 'text-red-700'}`}>
+                    AI Score: {entry.ai_analysis_result.ai_score}/10
                   </p>
                 </div>
               )}
             </div>
 
-            {entry.ai_feedback && (
+            {entry.ai_analysis_result?.ai_feedback && (
               <div className="bg-gray-50 p-3 rounded-md mt-3">
                 <p className="text-sm italic text-gray-700">
-                  <span className="font-semibold not-italic">AI Feedback:</span> {entry.ai_feedback}
+                  <span className="font-semibold not-italic">AI Feedback:</span> {entry.ai_analysis_result.ai_feedback}
                 </p>
               </div>
             )}
-             {entry.ai_suggestions && entry.ai_suggestions.length > 0 && (
+             {entry.ai_analysis_result?.ai_suggestions && (
               <div className="bg-indigo-50 p-3 rounded-md mt-3">
                 <p className="text-sm text-indigo-700">
-                  <span className="font-semibold">Suggesties:</span> {entry.ai_suggestions.join(', ')}
+                  <span className="font-semibold">Suggesties:</span> {entry.ai_analysis_result.ai_suggestions}
                 </p>
               </div>
             )}

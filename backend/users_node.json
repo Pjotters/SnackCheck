@@ -5,10 +5,10 @@
     "password": "$2b$10$SvmdVi5mwISvRH3Mw.1PN.tPVGNXOuHEa0WCOvBAn80szl3ellvY.",
     "class_code": "KlasA",
     "role": "student",
-    "points": 92,
-    "level": 1,
-    "streak_days": 7,
-    "last_submission_date": "2025-06-07",
+    "points": 122,
+    "level": 2,
+    "streak_days": 8,
+    "last_submission_date": "2025-06-08T18:23:23.411Z",
     "badges": [],
     "created_at": "2025-06-07T10:36:51.205Z"
   },
@@ -96,10 +96,10 @@
     "password": "$2b$10$NofllrOC07yAgiz0dd2EruhRMslV78oe2sRXjXTlWQrdtcXo65nn6",
     "class_code": "KlasA",
     "role": "admin",
-    "points": 27,
+    "points": 29,
     "level": 1,
     "streak_days": 7,
-    "last_submission_date": "2025-06-07T10:45:17.130Z",
+    "last_submission_date": "2025-06-07T17:58:36.064Z",
     "badges": [],
     "created_at": "2025-06-07T10:36:51.596Z"
   }

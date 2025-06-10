@@ -1,0 +1,19 @@
+{
+  "faqs": [
+    {
+      "id": "1",
+      "question": "Hoe werkt het puntensysteem?",
+      "answer": "Je verdient punten door gezonde maaltijden te eten en door dagelijks de quiz te spelen. Gezondere keuzes leveren meer punten op!"
+    },
+    {
+      "id": "2",
+      "question": "Hoe vaak wordt mijn voedselgeschiedenis bijgewerkt?",
+      "answer": "Je voedselgeschiedenis wordt direct bijgewerkt na het toevoegen van een nieuwe maaltijd."
+    },
+    {
+      "id": "3",
+      "question": "Kan ik mijn wachtwoord wijzigen?",
+      "answer": "Ja, je kunt je wachtwoord wijzigen in de instellingen van je profiel."
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+[
+  {
+    "id": "123",
+    "username": "testuser",
+    "password": "test123",
+    "email": "test@example.com",
+    "points": 20,
+    "level": 1,
+    "streak_days": 0,
+    "last_login": "2025-06-09T22:00:00.000Z",
+    "badges": [],
+    "food_history": [
+      {
+        "id": "0af2c672-b5fe-4012-9201-ee3ca2e0a21b",
+        "food_name": "druiven",
+        "points": 10,
+        "timestamp": "2025-06-09T20:20:31.190Z"
+      },
+      {
+        "id": "917c6351-b555-4256-8ffb-1dc0ff39fd8d",
+        "food_name": "appel",
+        "points": 10,
+        "timestamp": "2025-06-09T20:24:39.147Z"
+      }
+    ],
+    "daily_goals": {
+      "calories": 2000,
+      "protein": 50,
+      "carbs": 250,
+      "fat": 70,
+      "fruits_veggies": 5
+    }
+  }
+]

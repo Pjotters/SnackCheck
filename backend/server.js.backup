@@ -1,0 +1,1801 @@
+// --- IMPORTS ---
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
+const cors = require('cors');
+const multer = require('multer');
+const axios = require('axios');
+const fs = require('fs-extra'); // Using fs-extra for ensureDirSync and robust file ops
+const path = require('path');
+const bcrypt = require('bcrypt'); // Added for password hashing
+
+// --- CONFIGURATION & CONSTANTS ---
+const PORT = process.env.PORT || 3001;
+const SECRET_KEY = process.env.SECRET_KEY || 'jouw-geheime-sleutel-hier'; // Gebruik .env bestand in productie!
+const JWT_SECRET = process.env.JWT_SECRET || 'jwt-dev-secret';
+const HUGGING_FACE_API_TOKEN = process.env.HUGGING_FACE_API_TOKEN; // Zet dit in .env
+const EDAMAM_APP_ID = process.env.EDAMAM_APP_ID;
+const EDAMAM_APP_KEY = process.env.EDAMAM_APP_KEY;
+const EDAMAM_API_URL = 'https://api.edamam.com/api/food-database/v2/parser';
+
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const FOOD_IMAGES_DIR = path.join(UPLOADS_DIR, 'food_images');
+const GALLERY_IMAGES_DIR = path.join(UPLOADS_DIR, 'gallery_images');
+
+const USERS_FILE_PATH = path.join(__dirname, 'users_node.json');
+const FOOD_ENTRIES_FILE_PATH = path.join(__dirname, 'food_entries.json');
+const GALLERY_ITEMS_FILE_PATH = path.join(__dirname, 'gallery_items.json');
+const CHAT_MESSAGES_FILE_PATH = path.join(__dirname, 'chat_messages.json');
+const CALORIE_CHECKS_FILE_PATH = path.join(__dirname, 'calorie_checks.json'); // Optioneel loggen
+const FOOD_COMPARISONS_FILE_PATH = path.join(__dirname, 'food_comparisons.json');
+const QUESTIONS_FILE_PATH = path.join(__dirname, 'questions.json'); // Vragen voor de quiz
+const POINTS_BASE = 10; // Basis punten voor voedselinvoer
+const POINTS_HEALTHY = 20; // Punten voor gezond voedsel
+const POINTS_UNHEALTHY = 5; // Punten voor ongezond voedsel
+const POINTS_NEUTRAL = 10; // Punten voor neutraal voedsel
+const POINTS_DAILY_STREAK = 5; // Extra punten per week streak
+
+// Badge definities
+const BADGES = {
+    gezonde_keuze: { name: 'Gezonde Keuze', description: 'Eerste gezonde maaltijd gelogd' },
+    gezondheidsfreak: { name: 'Gezondheidsfreak', description: '5 gezonde maaltijden gelogd' },
+    variatie: { name: 'Variatie', description: '5 verschillende soorten voedsel gelogd' },
+    week_streak: { name: 'Week Streak', description: '7 dagen achter elkaar een maaltijd gelogd' },
+    level_5: { name: 'Level 5', description: 'Level 5 bereikt' },
+    level_10: { name: 'Level 10', description: 'Level 10 bereikt' }
+};
+
+// Lokale voedseldatabase als fallback
+const localFoodDatabase = {
+    'appel': {
+        calories: 52,
+        protein: 0.3,
+        fat: 0.2,
+        carbs: 14,
+        fiber: 2.4,
+        sugars: 10,
+        salt: 0,
+        nutriscore: 'a',
+        health_score: 8
+    },
+    'banaan': {
+        calories: 89,
+        protein: 1.1,
+        fat: 0.3,
+        carbs: 23,
+        fiber: 2.6,
+        sugars: 12,
+        salt: 0,
+        nutriscore: 'a',
+        health_score: 8
+    },
+    'broodje kaas': {
+        calories: 350,
+        protein: 15,
+        fat: 12,
+        carbs: 45,
+        fiber: 2,
+        sugars: 3,
+        salt: 1.2,
+        nutriscore: 'c',
+        health_score: 6
+    },
+    'chocolade': {
+        calories: 546,
+        protein: 4.9,
+        fat: 31,
+        carbs: 61,
+        fiber: 7,
+        sugars: 48,
+        salt: 0.1,
+        nutriscore: 'e',
+        health_score: 3
+    }
+};
+
+const POINTS_PER_HEALTHY_ITEM = 10;
+const POINTS_PER_CORRECT_QUESTION = 5; // Points for each correct answer in a quiz
+const GALLERY_MIN_AI_SCORE = 7; // Min score for an item to be considered for gallery
+
+const app = express();
+
+// --- MIDDLEWARE ---
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://snackcheck.vercel.app',
+  'https://ff2a-94-213-76-216.ngrok-free.app'
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Authorization']
+};
+
+app.use(cors(corsOptions));
+app.use(express.json());
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
+app.use('/uploads/food_images', express.static(FOOD_IMAGES_DIR)); // Serve uploaded food images
+app.use('/uploads/gallery_images', express.static(GALLERY_IMAGES_DIR)); // Serve uploaded gallery images
+
+// Multer setup for file uploads
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        fs.ensureDirSync(FOOD_IMAGES_DIR); // Ensure directory exists
+        cb(null, FOOD_IMAGES_DIR);
+    },
+    filename: function (req, file, cb) {
+        cb(null, uuidv4() + path.extname(file.originalname));
+    }
+});
+const upload = multer({ storage: storage });
+
+// Multer setup for gallery image uploads
+const galleryStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        fs.ensureDirSync(GALLERY_IMAGES_DIR); // Ensure directory exists
+        cb(null, GALLERY_IMAGES_DIR);
+    },
+    filename: function (req, file, cb) {
+        cb(null, uuidv4() + path.extname(file.originalname));
+    }
+});
+const galleryUpload = multer({ storage: galleryStorage });
+
+// --- HELPER FUNCTIONS ---
+const readData = async (filePath) => {
+    try {
+        await fs.access(filePath);
+        const data = await fs.readFile(filePath, 'utf-8');
+        return JSON.parse(data);
+    } catch (error) {
+        if (error.code === 'ENOENT') return []; // Return empty array if file doesn't exist
+        console.error(`Error reading data from ${filePath}:`, error);
+        throw error;
+    }
+};
+
+const writeData = async (filePath, data) => {
+    try {
+        await fs.writeFile(filePath, JSON.stringify(data, null, 2));
+    } catch (error) {
+        console.error(`Error writing data to ${filePath}:`, error);
+        throw error;
+    }
+};
+
+const authenticateToken = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (token == null) return res.sendStatus(401); // Unauthorized
+
+    jwt.verify(token, SECRET_KEY, (err, user) => {
+        if (err) return res.sendStatus(403); // Forbidden
+        req.user = user; // Add user payload to request
+        next();
+    });
+};
+
+const isAdmin = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({ detail: 'Admin access required' });
+    }
+};
+
+const calculateUserLevel = (points) => {
+    return Math.floor(points / 100) + 1; // Example: 1 level per 100 points
+};
+
+const calculateNewStreak = (lastSubmissionDateStr) => {
+    if (!lastSubmissionDateStr) return 1; // First submission
+    const lastSubmissionDate = new Date(lastSubmissionDateStr);
+    const today = new Date();
+    
+    lastSubmissionDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+
+    const diffTime = today - lastSubmissionDate;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 1) return true; // Continued streak
+    if (diffDays > 1) return 1; // Streak broken, reset to 1
+    return false; // Submitted today already, no change to streak count
+};
+
+// Placeholder for Hugging Face API call
+async function analyzeImageWithHuggingFace(imageBuffer) {
+    if (!HUGGING_FACE_API_TOKEN) {
+        console.warn('HUGGING_FACE_API_TOKEN not set. Skipping AI analysis.');
+        return { warning: 'AI analysis skipped due to missing API token.', result: [] };
+    }
+    try {
+        const response = await axios.post(
+            'https://api-inference.huggingface.co/models/nateraw/food-101',
+            imageBuffer,
+            {
+                headers: {
+                    'Authorization': `Bearer ${HUGGING_FACE_API_TOKEN}`,
+                    'Content-Type': 'application/octet-stream'
+                }
+            }
+        );
+        return { result: response.data }; // Raw output
+    } catch (error) {
+        console.error('Hugging Face API error:', error.response ? error.response.data : error.message);
+        return { error: 'AI analysis failed.', details: error.message, result: [] };
+    }
+}
+
+async function fetchNutritionFromOpenFoodFacts(foodName) {
+    try {
+        console.log(`Zoeken naar voedingsinformatie voor: ${foodName}`);
+        const searchResponse = await axios.get('https://world.openfoodfacts.org/cgi/search.pl', {
+            params: {
+                search_terms: foodName,
+                search_simple: 1,
+                action: 'process',
+                json: 1,
+                page_size: 3, // Meerdere resultaten voor betere matching
+                fields: 'product_name,nutriments,nutriscore_grade,image_front_url',
+                tagtype_0: 'categories',
+                tag_contains_0: 'contains',
+                tag_0: foodName.toLowerCase()
+            },
+            headers: {
+                'User-Agent': 'SnackCheck/1.0 (School Project) - p.oosterling@example.com'
+            }
+        });
+
+        if (searchResponse.data.products && searchResponse.data.products.length > 0) {
+            // Sorteer op relevantie (producten met hogere nutriscore komen eerst)
+            const products = searchResponse.data.products
+                .filter(p => p.product_name && p.nutriments)
+                .sort((a, b) => {
+                    const scoreA = a.nutriscore_grade ? getNutriScoreValue(a.nutriscore_grade) : 0;
+                    const scoreB = b.nutriscore_grade ? getNutriScoreValue(b.nutriscore_grade) : 0;
+                    return scoreB - scoreA;
+                });
+
+            if (products.length === 0) return null;
+            
+            const product = products[0];
+            console.log(`Gevonden product: ${product.product_name} (Nutri-Score: ${product.nutriscore_grade || 'onbekend'})`);
+            
+            // Helper om voedingswaarde te extraheren met fallback
+            const getNutrient = (nutriments, key, defaultValue = 0) => {
+                const value = nutriments[key] || nutriments[`${key}_100g`] || defaultValue;
+                return parseFloat(value) || defaultValue;
+            };
+            
+            const nutriments = product.nutriments || {};
+            const calories = getNutrient(nutriments, 'energy-kcal_100g', 0);
+            const protein = getNutrient(nutriments, 'proteins_100g', 0);
+            const fat = getNutrient(nutriments, 'fat_100g', 0);
+            const carbs = getNutrient(nutriments, 'carbohydrates_100g', 0);
+            const fiber = getNutrient(nutriments, 'fiber_100g', 0);
+            const sugars = getNutrient(nutriments, 'sugars_100g', 0);
+            const salt = getNutrient(nutriments, 'salt_100g', 0);
+            
+            // Bereken gezondheidsscore op basis van voedingswaarden
+            let healthScore = 5; // Neutrale score
+            
+            // Pas score aan op basis van voedingswaarden
+            if (protein > 5) healthScore += 1;
+            if (fiber > 3) healthScore += 1;
+            if (sugars < 5) healthScore += 1;
+            if (fat < 3) healthScore += 1;
+            if (salt < 0.3) healthScore += 1;
+            
+            // Zorg dat de score tussen 1 en 10 blijft
+            healthScore = Math.max(1, Math.min(10, healthScore));
+            
+            return {
+                name: product.product_name,
+                calories: Math.round(calories) || 0,
+                protein: Math.round(protein * 10) / 10 || 0,
+                fat: Math.round(fat * 10) / 10 || 0,
+                carbs: Math.round(carbs * 10) / 10 || 0,
+                fiber: Math.round(fiber * 10) / 10 || 0,
+                sugars: Math.round(sugars * 10) / 10 || 0,
+                salt: Math.round(salt * 1000) / 1000 || 0,
+                nutriscore: product.nutriscore_grade?.toUpperCase() || 'E',
+                health_score: healthScore,
+                image_url: product.image_front_url || null,
+                source: 'openfoodfacts',
+                confidence: 0.8 // Vertrouwensscore voor deze data
+            };
+        }
+        return null;
+    } catch (error) {
+        console.error('Fout bij het ophalen van voedingsinformatie:', error.message);
+        return null;
+    }
+}
+
+// Helper voor het omzetten van Nutri-Score naar een getal
+function getNutriScoreValue(grade) {
+    if (!grade) return 0;
+    const scores = {a: 5, b: 4, c: 3, d: 2, e: 1};
+    return scores[grade.toLowerCase()] || 0;
+}
+
+async function fetchNutritionFromEdamam(foodName) {
+    if (!EDAMAM_APP_ID || !EDAMAM_APP_KEY) {
+        console.warn('Edamam API ID or Key not configured. Skipping nutrition lookup.');
+        return await fetchNutritionFromOpenFoodFacts(foodName);
+    }
+    try {
+        const response = await axios.get(EDAMAM_API_URL, {
+            params: {
+                app_id: EDAMAM_APP_ID,
+                app_key: EDAMAM_APP_KEY,
+                ingr: foodName // 'ingr' is de parameter voor de voedselnaam
+            }
+        });
+
+        if (response.data && response.data.parsed && response.data.parsed.length > 0) {
+            const foodData = response.data.parsed[0].food;
+            const nutrients = foodData.nutrients;
+            return {
+                label: foodData.label,
+                calories: nutrients.ENERC_KCAL ? parseFloat(nutrients.ENERC_KCAL.toFixed(1)) : 0,
+                protein: nutrients.PROCNT ? parseFloat(nutrients.PROCNT.toFixed(1)) : 0,
+                fat: nutrients.FAT ? parseFloat(nutrients.FAT.toFixed(1)) : 0,
+                carbs: nutrients.CHOCDF ? parseFloat(nutrients.CHOCDF.toFixed(1)) : 0,
+            };
+        } else if (response.data && response.data.hints && response.data.hints.length > 0) {
+            const foodData = response.data.hints[0].food;
+            const nutrients = foodData.nutrients;
+            return {
+                label: foodData.label,
+                calories: nutrients.ENERC_KCAL ? parseFloat(nutrients.ENERC_KCAL.toFixed(1)) : 0,
+                protein: nutrients.PROCNT ? parseFloat(nutrients.PROCNT.toFixed(1)) : 0,
+                fat: nutrients.FAT ? parseFloat(nutrients.FAT.toFixed(1)) : 0,
+                carbs: nutrients.CHOCDF ? parseFloat(nutrients.CHOCDF.toFixed(1)) : 0,
+            };
+        }
+        console.warn(`No detailed nutrition data found for "${foodName}" on Edamam.`);
+        return null;
+    } catch (error) {
+        console.error(`Error fetching nutrition data for "${foodName}" from Edamam:`, error.response ? error.response.data : error.message);
+        return null;
+    }
+}
+
+        nutritionData = await fetchNutritionFromOpenFoodFacts(detectedFoodByAI);
+    }
+    
+    // Als we geen voedingsinformatie hebben, probeer dan de oorspronkelijke voedselnaam
+    if (!nutritionData && foodName && foodName.toLowerCase() !== detectedFoodByAI.toLowerCase()) {
+        nutritionData = await fetchNutritionFromOpenFoodFacts(foodName);
+        if (nutritionData) {
+            detectedFoodByAI = foodName;
+        }
+    }
+    
+    // Als we nog steeds geen voedingsinformatie hebben, gebruik dan een fallback
+    if (!nutritionData) {
+        // Controleer of het voedsel in onze lokale database staat
+        const localFood = localFoodDatabase[foodName.toLowerCase()] || localFoodDatabase[detectedFoodByAI.toLowerCase()];
+        if (localFood) {
+            nutritionData = { ...localFood, source: 'local_database' };
+        }
+    }
+    
+    // Standaardwaarden voor het geval we geen gedetailleerde voedingsinformatie hebben
+    let pointsEarned = POINTS_BASE;
+    let aiScore = 5; // Neutrale score
+    let caloriesEstimated = 100; // Standaard schatting
+    let feedback = `Je hebt ${detectedFoodByAI} gelogd.`;
+    let suggestions = [];
+    
+    if (nutritionData) {
+        // Gebruik de voedingsinformatie om de score te bepalen
+        aiScore = nutritionData.health_score || 5;
+        const quantityMultiplier = quantity / 100; // Aanpassen aan de hoeveelheid (standaard is 100g)
+        caloriesEstimated = Math.round((nutritionData.calories || 100) * quantityMultiplier);
+        
+        // Bepaal feedback op basis van de voedingswaarden
+        const feedbackParts = [];
+        const nutritionInfo = {
+            detected_food: detectedFoodByAI,
+            ai_confidence: confidence,
+            source: nutritionData.source || 'unknown',
+            calories: Math.round(caloriesEstimated),
+            protein: nutritionData.protein ? Math.round(nutritionData.protein * quantityMultiplier * 10) / 10 : 0,
+            fat: nutritionData.fat ? Math.round(nutritionData.fat * quantityMultiplier * 10) / 10 : 0,
+            carbs: nutritionData.carbs ? Math.round(nutritionData.carbs * quantityMultiplier * 10) / 10 : 0,
+            fiber: nutritionData.fiber ? Math.round(nutritionData.fiber * quantityMultiplier * 10) / 10 : 0,
+            sugars: nutritionData.sugars ? Math.round(nutritionData.sugars * quantityMultiplier * 10) / 10 : 0,
+            salt: nutritionData.salt ? Math.round(nutritionData.salt * quantityMultiplier * 1000) / 1000 : 0,
+            nutriscore: nutritionData.nutriscore || 'E'
+        };
+        
+        // Voeg voedingsinformatie toe aan feedback
+        feedbackParts.push(`${detectedFoodByAI}`);
+        
+        if (nutritionData.nutriscore) {
+            feedbackParts.push(`Nutri-Score: ${nutritionData.nutriscore.toUpperCase()}`);
+        }
+        
+        if (nutritionData.protein > 10) {
+            feedbackParts.push('rijk aan eiwitten');
+            if (aiScore < 8) aiScore += 1;
+        }
+        
+        if (nutritionData.fiber > 3) {
+            feedbackParts.push('vezelrijk');
+            if (aiScore < 9) aiScore += 1;
+        } else if (nutritionData.fiber < 1) {
+            suggestions.push('Kies vaker voor volkoren producten voor meer vezels.');
+        }
+        
+        if (nutritionData.sugars > 10) {
+            feedbackParts.push('bevat veel suiker');
+            suggestions.push('Kies vaker voor producten met minder toegevoegde suikers.');
+            if (aiScore > 2) aiScore -= 1;
+        }
+        
+        if (nutritionData.salt > 0.3) {
+            feedbackParts.push('bevat veel zout');
+            suggestions.push('Let op je zoutinname, te veel zout is niet goed voor je bloeddruk.');
+            if (aiScore > 2) aiScore -= 1;
+        }
+        
+        if (feedbackParts.length > 1) {
+            feedback = `${feedbackParts[0]} is ${feedbackParts.slice(1).join(', ')}.`;
+        }
+        
+        // Voeg suggesties toe op basis van voedingswaarden
+        if (nutritionData.fat > 10) {
+            suggestions.push('Kies vaker voor magere varianten om minder verzadigd vet binnen te krijgen.');
+            if (aiScore > 3) aiScore -= 1;
+        }
+        
+        // Zorg dat de score tussen 1 en 10 blijft
+        aiScore = Math.max(1, Math.min(10, Math.round(aiScore)));
+        
+        // Bepaal punten op basis van de gezondheidsscore
+        if (aiScore >= 8) {
+            pointsEarned = POINTS_HEALTHY;
+            feedback += ' Goede keuze!';
+            
+            // Controleer op badges
+            if (!newBadges.includes('gezonde_keuze')) {
+                newBadges.push('gezonde_keuze');
+            }
+            
+            // Geef een badge voor 5 gezonde keuzes
+            const userFoodEntries = foodEntries.filter(entry => entry.userId === userId);
+            const healthyEntries = userFoodEntries.filter(entry => entry.ai_analysis_result?.ai_score >= 8).length;
+            if (healthyEntries >= 4) { // 4 eerdere + deze = 5
+                newBadges.push('gezondheidsfreak');
+            }
+            
+        } else if (aiScore <= 3) {
+            pointsEarned = POINTS_UNHEALTHY;
+            feedback += ' Kijk uit, dit is een minder gezonde keuze.';
+            
+            // Geef een waarschuwing voor te veel ongezonde keuzes
+            const userFoodEntries = foodEntries.filter(entry => entry.userId === userId);
+            const unhealthyEntries = userFoodEntries.filter(entry => entry.ai_analysis_result?.ai_score <= 3).length;
+            if (unhealthyEntries >= 2) { // 2 eerdere + deze = 3
+                suggestions.push('Je hebt de laatste tijd veel ongezonde keuzes gemaakt. Probeer vaker voor gezonde opties te gaan!');
+            }
+        } else {
+            pointsEarned = POINTS_NEUTRAL;
+        }
+        
+        // Controleer op badge voor variatie
+        const uniqueFoods = [...new Set(foodEntries
+            .filter(entry => entry.userId === userId)
+            .map(entry => entry.food_name.toLowerCase()))];
+            
+        if (uniqueFoods.length >= 5 && !newBadges.includes('variatie')) {
+            newBadges.push('variatie');
+        }
+    } else {
+        // Geen voedingsinformatie beschikbaar
+        feedback = `We hebben geen gedetailleerde voedingsinformatie over ${detectedFoodByAI}.`;
+        suggestions.push('Probeer een specifiekere omschrijving of een foto te maken voor een betere analyse.');
+        
+        // Standaard voedingsinformatie voor onbekend voedsel
+        nutritionInfo.source = 'fallback';
+        nutritionInfo.calories = 150;
+        nutritionInfo.protein = 2;
+        nutritionInfo.fat = 5;
+        nutritionInfo.carbs = 25;
+    }
+    
+    // Voeg een algemene suggestie toe als er geen andere suggesties zijn
+    if (suggestions.length === 0) {
+        suggestions.push('Probeer gevarieerd te eten voor een uitgebalanceerd dieet.');
+    }
+    
+    // Controleer op dagelijkse streak
+    let streakUpdated = false;
+    const today = new Date().toISOString().split('T')[0];
+    
+    if (users[userIndex].last_submission_date !== today) {
+        const lastDate = new Date(users[userIndex].last_submission_date);
+        const currentDate = new Date(today);
+        const diffTime = Math.abs(currentDate - lastDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 1) {
+            // Opeenvolgende dagen
+            users[userIndex].streak_days += 1;
+            streakUpdated = true;
+            
+            // Geef bonuspunten voor een streak
+            if (users[userIndex].streak_days % 7 === 0) {
+                const weeklyBonus = POINTS_DAILY_STREAK * (users[userIndex].streak_days / 7);
+                pointsEarned += weeklyBonus;
+                feedback += ` Goed bezig! Je hebt een streak van ${users[userIndex].streak_days} dagen en verdient ${weeklyBonus} bonuspunten!`;
+                
+                // Geef een badge voor een week streak
+                if (users[userIndex].streak_days === 7 && !newBadges.includes('week_streak')) {
+                    newBadges.push('week_streak');
+                }
+            }
+        } else if (diffDays > 1) {
+            // Streak verbroken, begin opnieuw
+            users[userIndex].streak_days = 1;
+            streakUpdated = true;
+            feedback += ' Nieuwe streak gestart!';
+        }
+        
+        users[userIndex].last_submission_date = today;
+    }
+    
+    // Update het totaal aantal punten
+    users[userIndex].points += pointsEarned;
+    
+    // Bereken nieuw level (elke 100 punten een level)
+    const newLevel = Math.floor(users[userIndex].points / 100) + 1;
+    if (newLevel > users[userIndex].level) {
+        const levelUps = newLevel - users[userIndex].level;
+        users[userIndex].level = newLevel;
+        feedback += ` Gefeliciteerd! Je bent ${levelUps > 1 ? `${levelUps} levels` : 'een level'} omhooggegaan!`;
+        
+        // Geef een badge voor level 5
+        if (newLevel >= 5 && !newBadges.includes('level_5')) {
+            newBadges.push('level_5');
+        }
+        
+        // Geef een badge voor level 10
+        if (newLevel >= 10 && !newBadges.includes('level_10')) {
+            newBadges.push('level_10');
+        }
+    }
+    
+    // Voeg nieuwe badges toe aan de gebruiker
+    if (newBadges.length > 0) {
+        users[userIndex].badges = [...new Set([...users[userIndex].badges, ...newBadges])];
+        feedback += ` Je hebt ${newBadges.length > 1 ? 'nieuwe badges' : 'een nieuwe badge'} verdiend: ${newBadges.map(b => BADGES[b]?.name || b).join(', ')}!`;
+    }
+    
+    // Sla de bijgewerkte gebruikersgegevens op
+    await writeData(USERS_FILE_PATH, users);
+    
+    return {
+        points_earned: pointsEarned,
+        ai_score: aiScore,
+        calories_estimated: caloriesEstimated,
+        nutrition_info: nutritionInfo,
+        ai_feedback: feedback,
+        ai_suggestions: suggestions.join(' '),
+        new_badges: Array.from(new Set(newBadges)), // Verwijder dubbele badges
+        current_points: users[userIndex].points,
+        current_level: users[userIndex].level,
+        streak_days: users[userIndex].streak_days
+    };
+}
+        const nutritionData = await fetchNutritionFromEdamam(foodName);
+
+        if (nutritionData) {
+            return {
+                food_name: nutritionData.label || foodName, // Gebruik Edamam label indien beschikbaar
+                quantity: quantity,
+                calories_per_100g: nutritionData.calories,
+                protein_per_100g: nutritionData.protein,
+                fat_per_100g: nutritionData.fat,
+                carbs_per_100g: nutritionData.carbs,
+                estimated_calories: parseFloat((nutritionData.calories * quantity).toFixed(1)),
+                source: 'Edamam',
+                feedback: `Voedingsinformatie voor ${nutritionData.label || foodName} (${quantity}x)`,
+                ai_score: 80, // Standaard score
+                new_badges: [] // Lege array om fouten te voorkomen
+            };
+        }
+    } catch (error) {
+        console.error('Error fetching nutritional info:', error);
+        // Fallback als de API niet beschikbaar is of een fout geeft
+        const randomCalories = Math.floor(Math.random() * 300) + 50; // Willekeurige waarde tussen 50-350 kcal/100g
+        return {
+            food_name: foodName,
+            quantity: quantity,
+            calories_per_100g: randomCalories,
+            protein_per_100g: null,
+            fat_per_100g: null,
+            carbs_per_100g: null,
+            estimated_calories: parseFloat((randomCalories * quantity).toFixed(1)),
+            source: 'Placeholder (Edamam lookup failed)',
+            feedback: `Kon geen gedetailleerde voedingsinformatie vinden voor ${foodName}. Schatting is ${randomCalories} kcal/100g.`,
+            ai_score: 60, // Lagere score voor schattingen
+            new_badges: [] // Lege array om fouten te voorkomen
+        };
+    }
+}
+
+// --- API ROUTES ---
+const apiRouter = express.Router();
+
+// --- QUESTIONS ---
+// Get all questions (without correct answers)
+apiRouter.get('/questions', authenticateToken, async (req, res) => {
+    try {
+        const questions = await readData(QUESTIONS_FILE_PATH);
+        // Remove correct_answers and explanation from response
+        const questionsWithoutAnswers = questions.map(({ correct_answers, explanation, ...rest }) => rest);
+        res.json(questionsWithoutAnswers);
+    } catch (error) {
+        console.error('Error fetching questions:', error);
+        res.status(500).json({ detail: 'Failed to fetch questions' });
+    }
+});
+
+// Submit answers to questions
+apiRouter.post('/questions/submit', authenticateToken, async (req, res) => {
+    try {
+        const { answers } = req.body; // Array of { question_id, answers: [] }
+        if (!Array.isArray(answers)) {
+            return res.status(400).json({ detail: 'Answers should be an array' });
+        }
+
+        const questions = await readData(QUESTIONS_FILE_PATH);
+        const results = [];
+        let totalCorrect = 0;
+
+        // Process each submitted answer
+        for (const answer of answers) {
+            const question = questions.find(q => q.id === answer.question_id);
+            if (!question) continue;
+
+            // Check if answers are correct (order doesn't matter)
+            const isCorrect = 
+                answer.answers.length === question.correct_answers.length &&
+                answer.answers.every(ans => question.correct_answers.includes(ans));
+
+            if (isCorrect) {
+                totalCorrect++;
+            }
+
+            results.push({
+                question_id: question.id,
+                is_correct: isCorrect,
+                correct_answers: question.correct_answers,
+                explanation: question.explanation
+            });
+        }
+
+        // Calculate points (5 points per correct answer)
+        const pointsEarned = totalCorrect * POINTS_PER_CORRECT_QUESTION;
+        
+        // Update user points
+        if (pointsEarned > 0) {
+            const users = await readData(USERS_FILE_PATH);
+            const userIndex = users.findIndex(u => u.id === req.user.userId);
+            
+            if (userIndex !== -1) {
+                users[userIndex].points = (users[userIndex].points || 0) + pointsEarned;
+                users[userIndex].level = calculateUserLevel(users[userIndex].points);
+                await writeData(USERS_FILE_PATH, users);
+            }
+        }
+
+        // Return results and points
+        res.json({
+            results,
+            total_correct: totalCorrect,
+            total_questions: answers.length,
+            points_earned: pointsEarned
+        });
+
+    } catch (error) {
+        console.error('Error submitting answers:', error);
+        res.status(500).json({ detail: 'Failed to process answers' });
+    }
+});
+
+// --- AUTHENTICATION ---
+apiRouter.post('/login', async (req, res) => {
+    const { username, password, class_code } = req.body;
+    
+    if (!username || !password || !class_code) {
+        return res.status(400).json({ detail: 'Vul alle velden in' });
+    }
+    
+    try {
+        const users = await readData(USERS_FILE_PATH);
+        const user = users.find(u => u.username === username && u.class_code === class_code);
+        
+        if (!user) {
+            return res.status(401).json({ detail: 'Ongeldige inloggegevens' });
+        }
+        
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+            return res.status(401).json({ detail: 'Ongeldige inloggegevens' });
+        }
+        
+        // Create JWT token
+        const token = jwt.sign(
+            { userId: user.id, username: user.username, role: user.role, class_code: user.class_code },
+            SECRET_KEY,
+            { expiresIn: '7d' }
+        );
+        
+        // Return user data (without password) and token
+        const { password: _, ...userData } = user;
+        res.json({ user: userData, token });
+        
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ detail: 'Er is een fout opgetreden bij het inloggen' });
+    }
+});
+
+// --- FOOD ENTRIES ---
+apiRouter.get('/food-entries', authenticateToken, async (req, res) => {
+    try {
+        const foodEntries = await readData(FOOD_ENTRIES_FILE_PATH);
+        // Filter entries by user ID if not admin
+        if (req.user.role !== 'admin') {
+            const userEntries = foodEntries.filter(entry => entry.user_id === req.user.userId);
+            return res.json(userEntries);
+        }
+        res.json(foodEntries);
+    } catch (error) {
+        console.error('Error fetching food entries:', error);
+        res.status(500).json({ detail: 'Failed to fetch food entries' });
+    }
+});
+
+// --- LEADERBOARD ---
+apiRouter.get('/leaderboard', authenticateToken, async (req, res) => {
+    try {
+        const users = await readData(USERS_FILE_PATH);
+        // Sort users by points in descending order
+        const leaderboard = users
+            .filter(user => user.class_code === req.user.class_code) // Only show same class
+            .sort((a, b) => (b.points || 0) - (a.points || 0))
+            .map(({ id, username, points, level, badges }) => ({
+                id,
+                username,
+                points: points || 0,
+                level: level || 1,
+                badges: badges || []
+            }));
+        
+        res.json(leaderboard);
+    } catch (error) {
+        console.error('Error fetching leaderboard:', error);
+        res.status(500).json({ detail: 'Failed to fetch leaderboard' });
+    }
+});
+
+// --- ANALYTICS ---
+apiRouter.get('/analytics/user-stats', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const users = await readData(USERS_FILE_PATH);
+        const user = users.find(u => u.id === userId);
+        
+        if (!user) {
+            return res.status(404).json({ detail: 'User not found' });
+        }
+        
+        const foodEntries = await readData(FOOD_ENTRIES_FILE_PATH);
+        const userEntries = foodEntries.filter(entry => entry.user_id === userId);
+        
+        // Calculate stats
+        const totalEntries = userEntries.length;
+        const avgScore = userEntries.length > 0 
+            ? userEntries.reduce((sum, entry) => sum + (entry.ai_score || 0), 0) / userEntries.length
+            : 0;
+            
+        // Get unique dates to calculate streak
+        const uniqueDates = [...new Set(userEntries
+            .map(entry => new Date(entry.timestamp).toDateString()))];
+        
+        res.json({
+            total_entries: totalEntries,
+            avg_score: parseFloat(avgScore.toFixed(2)),
+            total_points: user.points || 0,
+            level: user.level || 1,
+            badges: user.badges || [],
+            streak_days: user.streak_days || 0,
+            entries_last_7_days: userEntries
+                .filter(entry => {
+                    const entryDate = new Date(entry.timestamp);
+                    const weekAgo = new Date();
+                    weekAgo.setDate(weekAgo.getDate() - 7);
+                    return entryDate >= weekAgo;
+                })
+                .length
+        });
+        
+    } catch (error) {
+        console.error('Error fetching user stats:', error);
+        res.status(500).json({ detail: 'Failed to fetch user stats' });
+    }
+});
+
+// --- DAILY QUESTIONS ---
+apiRouter.get('/daily-questions/today', authenticateToken, async (req, res) => {
+    try {
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        const questions = await readData(QUESTIONS_FILE_PATH);
+        
+        // Find active questions for today
+        const todaysQuestions = questions.filter(q => 
+            q.date === today && q.is_active === true
+        );
+        
+        // Return questions without correct answers
+        const questionsForUser = todaysQuestions.map(({ correct_option, ...q }) => q);
+        
+        res.json(questionsForUser);
+    } catch (error) {
+        console.error('Error fetching daily questions:', error);
+        res.status(500).json({ detail: 'Failed to fetch daily questions' });
+    }
+});
+
+// --- GALLERY ---
+apiRouter.get('/gallery', authenticateToken, async (req, res) => {
+    try {
+        const galleryItems = await readData(GALLERY_ITEMS_FILE_PATH);
+        // Only show items from the same class
+        const classItems = galleryItems.filter(item => 
+            item.class_code === req.user.class_code || req.user.role === 'admin'
+        );
+        res.json(classItems);
+    } catch (error) {
+        console.error('Error fetching gallery items:', error);
+        res.status(500).json({ detail: 'Failed to fetch gallery items' });
+    }
+});
+apiRouter.post('/login', async (req, res) => {
+    const { username, password, class_code } = req.body;
+    
+    if (!username || !password || !class_code) {
+        return res.status(400).json({ detail: 'Vul alle velden in' });
+    }
+    
+    try {
+        const users = await readData(USERS_FILE_PATH);
+        const user = users.find(u => u.username === username && u.class_code === class_code);
+        
+        if (!user) {
+            return res.status(401).json({ detail: 'Ongeldige inloggegevens' });
+        }
+        
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+            return res.status(401).json({ detail: 'Ongeldige inloggegevens' });
+        }
+        
+        // Create JWT token
+        const token = jwt.sign(
+            { userId: user.id, username: user.username, role: user.role, class_code: user.class_code },
+            SECRET_KEY,
+            { expiresIn: '7d' }
+        );
+        
+        // Return user data (without password) and token
+        const { password: _, ...userData } = user;
+        res.json({ user: userData, token });
+        
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ detail: 'Er is een fout opgetreden bij het inloggen' });
+    }
+});
+
+// --- FOOD ENTRIES ---
+apiRouter.get('/food-entries', authenticateToken, async (req, res) => {
+    try {
+        const foodEntries = await readData(FOOD_ENTRIES_FILE_PATH);
+        // Filter entries by user ID if not admin
+        if (req.user.role !== 'admin') {
+            const userEntries = foodEntries.filter(entry => entry.user_id === req.user.userId);
+            return res.json(userEntries);
+        }
+        res.json(foodEntries);
+    } catch (error) {
+        console.error('Error fetching food entries:', error);
+        res.status(500).json({ detail: 'Failed to fetch food entries' });
+    }
+});
+
+// --- LEADERBOARD ---
+apiRouter.get('/leaderboard', authenticateToken, async (req, res) => {
+    try {
+        const users = await readData(USERS_FILE_PATH);
+        // Sort users by points in descending order
+        const leaderboard = users
+            .filter(user => user.class_code === req.user.class_code) // Only show same class
+            .sort((a, b) => (b.points || 0) - (a.points || 0))
+            .map(({ id, username, points, level, badges }) => ({
+                id,
+                username,
+                points: points || 0,
+                level: level || 1,
+                badges: badges || []
+            }));
+        
+        res.json(leaderboard);
+    } catch (error) {
+        console.error('Error fetching leaderboard:', error);
+        res.status(500).json({ detail: 'Failed to fetch leaderboard' });
+    }
+});
+
+// --- ANALYTICS ---
+apiRouter.get('/analytics/user-stats', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const users = await readData(USERS_FILE_PATH);
+        const user = users.find(u => u.id === userId);
+        
+        if (!user) {
+            return res.status(404).json({ detail: 'User not found' });
+        }
+        
+        const foodEntries = await readData(FOOD_ENTRIES_FILE_PATH);
+        const userEntries = foodEntries.filter(entry => entry.user_id === userId);
+        
+        // Calculate stats
+        const totalEntries = userEntries.length;
+        const avgScore = userEntries.length > 0 
+            ? userEntries.reduce((sum, entry) => sum + (entry.ai_score || 0), 0) / userEntries.length
+            : 0;
+            
+        // Get unique dates to calculate streak
+        const uniqueDates = [...new Set(userEntries
+            .map(entry => new Date(entry.timestamp).toDateString()))];
+        
+        res.json({
+            total_entries: totalEntries,
+            avg_score: parseFloat(avgScore.toFixed(2)),
+            total_points: user.points || 0,
+            level: user.level || 1,
+            badges: user.badges || [],
+            streak_days: user.streak_days || 0,
+            entries_last_7_days: userEntries
+                .filter(entry => {
+                    const entryDate = new Date(entry.timestamp);
+                    const weekAgo = new Date();
+                    weekAgo.setDate(weekAgo.getDate() - 7);
+                    return entryDate >= weekAgo;
+                })
+                .length
+        });
+        
+    } catch (error) {
+        console.error('Error fetching user stats:', error);
+        res.status(500).json({ detail: 'Failed to fetch user stats' });
+    }
+});
+
+// --- DAILY QUESTIONS ---
+apiRouter.get('/daily-questions/today', authenticateToken, async (req, res) => {
+    try {
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        const questions = await readData(QUESTIONS_FILE_PATH);
+        
+        // Find active questions for today
+        const todaysQuestions = questions.filter(q => 
+            q.date === today && q.is_active === true
+        );
+        
+        // Return questions without correct answers
+        const questionsForUser = todaysQuestions.map(({ correct_option, ...q }) => q);
+        
+        res.json(questionsForUser);
+    } catch (error) {
+        console.error('Error fetching daily questions:', error);
+        res.status(500).json({ detail: 'Failed to fetch daily questions' });
+    }
+});
+
+// --- GALLERY ---
+apiRouter.get('/gallery', authenticateToken, async (req, res) => {
+    try {
+        const galleryItems = await readData(GALLERY_ITEMS_FILE_PATH);
+        // Only show items from the same class
+        const classItems = galleryItems.filter(item => 
+            item.class_code === req.user.class_code || req.user.role === 'admin'
+        );
+        res.json(classItems);
+    } catch (error) {
+        console.error('Error fetching gallery items:', error);
+        res.status(500).json({ detail: 'Failed to fetch gallery items' });
+    }
+});
+
+// --- USER PROFILE ---
+apiRouter.get('/users/me', authenticateToken, async (req, res) => {
+    try {
+        const users = await readData(USERS_FILE_PATH);
+        const user = users.find(u => u.id === req.user.userId);
+        
+        if (!user) {
+            return res.status(404).json({ detail: 'Gebruiker niet gevonden' });
+        }
+        
+        // Verwijder gevoelige gegevens voordat we de gebruikersgegevens terugsturen
+        const { password, ...userData } = user;
+        
+        res.json({
+            ...userData,
+            points: userData.points || 0,
+            level: userData.level || 1,
+            streak_days: userData.streak_days || 0,
+            badges: userData.badges || []
+        });
+    } catch (error) {
+        console.error('Error fetching user profile:', error);
+        res.status(500).json({ detail: 'Er is een fout opgetreden bij het ophalen van het gebruikersprofiel' });
+    }
+});
+
+// --- FOOD ENTRIES ---
+apiRouter.post('/food-entries', authenticateToken, upload.single('image'), async (req, res) => {
+    const { food_name, meal_type, quantity } = req.body;
+    const userId = req.user.userId;
+    const username = req.user.username;
+    let imageUrl = null;
+    let rawAiOutput = { result: [] }; // Default structure
+
+    if (!food_name) {
+        return res.status(400).json({ detail: 'Food name is required.' });
+    }
+
+    if (req.file) {
+        imageUrl = `/uploads/food_images/${req.file.filename}`;
+        try {
+            const imageBuffer = await fs.readFile(req.file.path);
+            rawAiOutput = await analyzeImageWithHuggingFace(imageBuffer);
+        } catch (err) {
+        quantity: parseFloat(quantity) || 1,
+        image_url: imageUrl,
+        timestamp: new Date().toISOString(),
+        ai_analysis_result: transformedAiResult // Store the transformed result
+    };
+
+    const foodEntries = await readData(FOOD_ENTRIES_FILE_PATH);
+    foodEntries.push(newEntry);
+    await writeData(FOOD_ENTRIES_FILE_PATH, foodEntries);
+
+    // Update user points, streak, level, badges
+    const users = await readData(USERS_FILE_PATH);
+    const userIndex = users.findIndex(u => u.id === userId);
+    if (userIndex !== -1) {
+        // Basis punten voor het loggen
+        let pointsToAdd = transformedAiResult.points_earned || 0;
+        
+        // Controleer of dit de eerste inzending van vandaag is
+        const lastSubmission = users[userIndex].last_submission_date 
+            ? new Date(users[userIndex].last_submission_date) 
+            : null;
+        const today = new Date();
+        const isNewDay = !lastSubmission || 
+            lastSubmission.getDate() !== today.getDate() || 
+            lastSubmission.getMonth() !== today.getMonth() || 
+            lastSubmission.getFullYear() !== today.getFullYear();
+        
+        // Voeg dagelijkse streak bonus toe als het een nieuwe dag is
+        if (isNewDay) {
+            const streakChange = calculateNewStreak(users[userIndex].last_submission_date);
+            if (streakChange === true) { 
+                users[userIndex].streak_days = (users[userIndex].streak_days || 0) + 1;
+                // Voeg bonuspunten toe voor de dagelijkse streak
+                if (users[userIndex].streak_days > 1) {
+                    pointsToAdd += POINTS_DAILY_STREAK * Math.min(Math.floor(users[userIndex].streak_days / 7) + 1, 4);
+                }
+            } else if (typeof streakChange === 'number') { // Reset streak
+                users[userIndex].streak_days = streakChange; 
+            }
+        }
+        
+        // Voeg punten toe voor gallery plaatsing
+        if (imageUrl && transformedAiResult.ai_score >= GALLERY_MIN_AI_SCORE) {
+            pointsToAdd += POINTS_GALLERY;
+        }
+        
+        // Update het totaal aantal punten
+        users[userIndex].points = (users[userIndex].points || 0) + pointsToAdd;
+        users[userIndex].last_submission_date = new Date().toISOString();
+        users[userIndex].level = calculateUserLevel(users[userIndex].points);
+        
+        // Update badges
+        const currentBadges = new Set(users[userIndex].badges || []);
+        if (transformedAiResult && Array.isArray(transformedAiResult.new_badges)) {
+            transformedAiResult.new_badges.forEach(badge => currentBadges.add(badge));
+            users[userIndex].badges = Array.from(currentBadges);
+        }
+        
+        // Voeg eventuele niveau badges toe
+        const level = users[userIndex].level;
+        if (level >= 10 && !currentBadges.has('level_10')) {
+            currentBadges.add('level_10');
+        } else if (level >= 5 && !currentBadges.has('level_5')) {
+            currentBadges.add('level_5');
+        }
+        
+        users[userIndex].badges = Array.from(currentBadges);
+
+    await writeData(USERS_FILE_PATH, users);
+    }
+
+    // Add to gallery if score is high enough
+    if (imageUrl && transformedAiResult.ai_score >= GALLERY_MIN_AI_SCORE) {
+        const galleryItems = await readData(GALLERY_ITEMS_FILE_PATH);
+        const newGalleryItem = {
+            id: uuidv4(),
+            food_entry_id: newEntry.id,
+            userId,
+            username,
+            food_name,
+            image_url: imageUrl, // Store path, frontend will use it
+            ai_score: transformedAiResult.ai_score,
+            timestamp_added: new Date().toISOString(),
+            likes: 0
+        };
+        galleryItems.push(newGalleryItem);
+        await writeData(GALLERY_ITEMS_FILE_PATH, galleryItems);
+    }
+
+    res.status(201).json(transformedAiResult); // Return the detailed AI analysis result as per App.js
+});
+
+// --- CALORIE CHECKER ---
+apiRouter.post('/calorie-check', authenticateToken, async (req, res) => {
+    const { food_name, quantity } = req.body;
+    if (!food_name) {
+        return res.status(400).json({ detail: 'Food name is required.' });
+    }
+    const nutritionalInfo = await getNutritionalInfo(food_name, parseFloat(quantity) || 1);
+    
+    // Optional: Log check
+    const calorieChecks = await readData(CALORIE_CHECKS_FILE_PATH);
+    calorieChecks.push({ id: uuidv4(), userId: req.user.userId, food_name, quantity, result: nutritionalInfo, timestamp: new Date().toISOString() });
+    await writeData(CALORIE_CHECKS_FILE_PATH, calorieChecks);
+
+    res.json(nutritionalInfo);
+});
+
+// --- FOOD COMPARISON ---
+apiRouter.post('/food-compare', authenticateToken, async (req, res) => {
+    const { food_1, food_2 } = req.body;
+    if (!food_1 || !food_2) {
+        return res.status(400).json({ detail: 'Twee voedingsmiddelen zijn vereist voor vergelijking.' });
+    }
+
+    const food1Info = await getNutritionalInfo(food_1);
+    const food2Info = await getNutritionalInfo(food_2);
+
+    // Fallback if Edamam fails for one of them or both
+    if (!food1Info || !food2Info) {
+        let message = 'Kon geen voedingsinformatie vinden voor ';
+        if (!food1Info && !food2Info) message += `${food_1} en ${food_2}.`;
+        else if (!food1Info) message += `${food_1}.`;
+        else message += `${food_2}.`;
+        return res.status(404).json({ detail: message });
+    }
+    
+    let winner = null;
+    let recommendationText = "";
+
+    // Primary: Lower calories_per_100g is better
+    if (food1Info.calories_per_100g < food2Info.calories_per_100g) {
+        winner = food1Info.food_name;
+        recommendationText = `${food1Info.food_name} (${food1Info.calories_per_100g} kcal/100g) is lager in calorieën dan ${food2Info.food_name} (${food2Info.calories_per_100g} kcal/100g).`;
+    } else if (food2Info.calories_per_100g < food1Info.calories_per_100g) {
+        winner = food2Info.food_name;
+        recommendationText = `${food2Info.food_name} (${food2Info.calories_per_100g} kcal/100g) is lager in calorieën dan ${food1Info.food_name} (${food1Info.calories_per_100g} kcal/100g).`;
+    } else { // Calories are equal, try protein
+        const protein1 = food1Info.protein_per_100g || 0;
+        const protein2 = food2Info.protein_per_100g || 0;
+
+        if (protein1 > protein2) {
+            winner = food1Info.food_name;
+            recommendationText = `Beide hebben circa ${food1Info.calories_per_100g} kcal/100g, maar ${food1Info.food_name} (${protein1}g proteïne/100g) heeft meer proteïne dan ${food2Info.food_name} (${protein2}g proteïne/100g).`;
+        } else if (protein2 > protein1) {
+            winner = food2Info.food_name;
+            recommendationText = `Beide hebben circa ${food1Info.calories_per_100g} kcal/100g, maar ${food2Info.food_name} (${protein2}g proteïne/100g) heeft meer proteïne dan ${food1Info.food_name} (${protein1}g proteïne/100g).`;
+        } else {
+            winner = "Beide zijn vergelijkbaar";
+            recommendationText = `Beide producten zijn zeer vergelijkbaar op basis van calorieën (circa ${food1Info.calories_per_100g} kcal/100g) en proteïne (circa ${protein1}g proteïne/100g).`;
+        }
+    }
+    recommendationText += " Dit is een algemene vergelijking. Raadpleeg een voedingsdeskundige voor persoonlijk advies.";
+
+    const comparisonResult = {
+        food_1_details: {
+            name: food1Info.food_name,
+            calories_per_100g: food1Info.calories_per_100g,
+            protein_per_100g: food1Info.protein_per_100g,
+            fat_per_100g: food1Info.fat_per_100g,
+            carbs_per_100g: food1Info.carbs_per_100g,
+            source: food1Info.source
+        },
+        food_2_details: {
+            name: food2Info.food_name,
+            calories_per_100g: food2Info.calories_per_100g,
+            protein_per_100g: food2Info.protein_per_100g,
+            fat_per_100g: food2Info.fat_per_100g,
+            carbs_per_100g: food2Info.carbs_per_100g,
+            source: food2Info.source
+        },
+        winner: winner,
+        recommendation: recommendationText,
+        comparison_summary: {
+             calorie_difference_per_100g: parseFloat(Math.abs(food1Info.calories_per_100g - food2Info.calories_per_100g).toFixed(1)),
+             protein_difference_per_100g: parseFloat(Math.abs((food1Info.protein_per_100g || 0) - (food2Info.protein_per_100g || 0)).toFixed(1))
+        }
+    };
+
+    // Optional: Log comparison
+    const foodComparisons = await readData(FOOD_COMPARISONS_FILE_PATH);
+    foodComparisons.push({ 
+        id: uuidv4(), 
+        userId: req.user.userId, 
+        food_1_name: food_1, // Log original requested names
+        food_2_name: food_2, 
+        result: comparisonResult, 
+        timestamp: new Date().toISOString() 
+    });
+    await writeData(FOOD_COMPARISONS_FILE_PATH, foodComparisons);
+
+    res.json(comparisonResult);
+});
+
+// --- GALLERY ---
+apiRouter.get('/gallery', authenticateToken, async (req, res) => {
+    const galleryItems = await readData(GALLERY_ITEMS_FILE_PATH);
+    // Frontend expects image_url if we modify it, or image_data (base64)
+    // Current setup provides image_url, which is more efficient.
+    // If frontend strictly needs base64, conversion logic would be needed here.
+    res.json(galleryItems.sort((a,b) => new Date(b.timestamp_added) - new Date(a.timestamp_added))); // Newest first
+});
+
+apiRouter.post('/gallery/:itemId/like', authenticateToken, async (req, res) => {
+    const { itemId } = req.params;
+    const galleryItems = await readData(GALLERY_ITEMS_FILE_PATH);
+    const itemIndex = galleryItems.findIndex(item => item.id === itemId);
+
+    if (itemIndex !== -1) {
+        galleryItems[itemIndex].likes = (galleryItems[itemIndex].likes || 0) + 1;
+        await writeData(GALLERY_ITEMS_FILE_PATH, galleryItems);
+        res.json(galleryItems[itemIndex]);
+    } else {
+        res.status(404).json({ detail: 'Gallery item not found' });
+    }
+});
+
+// --- CHAT ---
+apiRouter.get('/chat/messages', authenticateToken, async (req, res) => {
+    const messages = await readData(CHAT_MESSAGES_FILE_PATH);
+    res.json(messages.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp))); // Newest first for API, frontend reverses for display
+});
+
+apiRouter.post('/chat/send', authenticateToken, async (req, res) => {
+    // App.js ChatHelp component sends FormData, but it only contains 'message'.
+    // For simplicity, let's assume it's parsed as req.body.message if multer isn't specifically used for this route.
+    // If using a global multer or specific one for this route, adjust req.body access.
+    // For now, assuming express.json() or express.urlencoded() handles it if not multipart/form-data.
+    // If it IS multipart, need upload.none() or specific field handling.
+    // Let's assume App.js sends JSON for chat for now, as it's simpler.
+    // If it strictly sends FormData, then `upload.none()` middleware might be needed for this route, or parse `req.body.message`.
+    const { message } = req.body; 
+    
+    if (!message || typeof message !== 'string' || message.trim() === '') {
+        return res.status(400).json({ detail: 'Message content is required and must be a non-empty string.' });
+    }
+
+    const users = await readData(USERS_FILE_PATH);
+    const sender = users.find(u => u.id === req.user.userId);
+
+    const newMessage = {
+        id: uuidv4(),
+        userId: req.user.userId,
+        username: req.user.username,
+        message: message.trim(),
+        timestamp: new Date().toISOString(),
+        is_admin: sender ? sender.role === 'admin' : false
+    };
+    const messages = await readData(CHAT_MESSAGES_FILE_PATH);
+    messages.push(newMessage);
+    await writeData(CHAT_MESSAGES_FILE_PATH, messages);
+    res.status(201).json(newMessage);
+});
+
+// --- ADMIN ROUTES ---
+const adminRouter = express.Router();
+adminRouter.use(authenticateToken, isAdmin); // Protect all admin routes
+
+adminRouter.get('/users', async (req, res) => {
+    const users = await readData(USERS_FILE_PATH);
+    const userList = users.map(u => {
+        const { password, ...userData } = u; // Exclude passwords
+        return userData;
+    });
+    res.json(userList);
+});
+
+adminRouter.get('/users/:userId/details', async (req, res) => {
+    const { userId } = req.params;
+    try {
+        const users = await readData(USERS_FILE_PATH);
+        const userProfile = users.find(u => u.userId === userId);
+
+        if (!userProfile) {
+            return res.status(404).json({ detail: 'User not found.' });
+        }
+
+        // Exclude password from the profile
+        const { password, ...safeUserProfile } = userProfile;
+
+        const allFoodEntries = await readData(FOOD_ENTRIES_FILE_PATH);
+        const userFoodEntries = allFoodEntries.filter(entry => entry.userId === userId);
+
+        const allGalleryItems = await readData(GALLERY_ITEMS_FILE_PATH);
+        const userGalleryItems = allGalleryItems.filter(item => item.userId === userId);
+
+        const allChatMessages = await readData(CHAT_MESSAGES_FILE_PATH);
+        const userChatMessages = allChatMessages.filter(msg => msg.userId === userId);
+
+        const allCalorieChecks = await readData(CALORIE_CHECKS_FILE_PATH);
+        const userCalorieChecks = allCalorieChecks.filter(check => check.userId === userId);
+
+        const allFoodComparisons = await readData(FOOD_COMPARISONS_FILE_PATH);
+        const userFoodComparisons = allFoodComparisons.filter(comp => comp.userId === userId);
+
+        const quizSummary = {
+            points: safeUserProfile.points,
+            level: safeUserProfile.level,
+            badges: safeUserProfile.badges || [],
+            quiz_stats: safeUserProfile.quiz_stats || {
+                total_questions_answered: 0,
+                correct_answers: 0,
+                incorrect_answers: 0,
+                score_history: []
+            }
+        };
+
+        res.json({
+            user_profile: safeUserProfile,
+            food_entries: userFoodEntries.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
+            gallery_items: userGalleryItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
+            chat_messages: userChatMessages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)), // Chronological
+            calorie_checks: userCalorieChecks.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
+            food_comparisons: userFoodComparisons.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
+            quiz_summary: quizSummary
+        });
+
+    } catch (error) {
+        console.error(`Error fetching details for user ${userId}:`, error);
+        res.status(500).json({ detail: 'Failed to fetch user details.' });
+    }
+});
+
+adminRouter.post('/create-user', async (req, res) => {
+    const { username, password, class_code, role } = req.body;
+    if (!username || !password || !class_code) {
+        return res.status(400).json({ detail: 'Username, password, and class_code are required.' });
+    }
+
+    const users = await readData(USERS_FILE_PATH);
+    if (users.find(u => u.username === username)) {
+        return res.status(400).json({ detail: 'Username already exists.' });
+    }
+    
+    let determinedRole = role;
+    if (!determinedRole) {
+        if (class_code === 'ADMIN') determinedRole = 'admin';
+        else if (class_code === 'DOCENT') determinedRole = 'teacher';
+        else if (class_code === 'KLAS1') determinedRole = 'student_class_1';
+        else if (class_code === 'KLAS2') determinedRole = 'student_class_2';
+        else if (class_code === 'KLAS3') determinedRole = 'student_class_3';
+        else determinedRole = 'student'; // Generic student if not matched
+    }
+
+    const newUser = {
+        id: uuidv4(),
+        username,
+        password, // Storing plain text as per user's explicit previous request
+        class_code,
+        role: determinedRole,
+        points: 0,
+        level: 1,
+        streak_days: 0,
+        last_submission_date: null,
+        created_at: new Date().toISOString(),
+        badges: []
+    };
+    users.push(newUser);
+    await writeData(USERS_FILE_PATH, users);
+    const { password: _, ...userData } = newUser;
+    res.status(201).json(userData);
+});
+
+adminRouter.delete('/users/:userId', async (req, res) => {
+    const { userId } = req.params;
+    let users = await readData(USERS_FILE_PATH);
+    const userToDelete = users.find(u => u.id === userId);
+
+    if (!userToDelete) {
+        return res.status(404).json({ detail: 'User not found.' });
+    }
+    if (userToDelete.role === 'admin' && users.filter(u => u.role === 'admin').length <= 1) {
+        return res.status(400).json({ detail: 'Cannot delete the last admin user.' });
+    }
+
+    users = users.filter(u => u.id !== userId);
+    await writeData(USERS_FILE_PATH, users);
+
+    // Cascading delete (as per memory 6ad884c7-5b38-4285-b94e-a342831356c5)
+    try {
+        let foodEntries = await readData(FOOD_ENTRIES_FILE_PATH);
+        foodEntries = foodEntries.filter(entry => entry.userId !== userId);
+        await writeData(FOOD_ENTRIES_FILE_PATH, foodEntries);
+
+        let galleryItems = await readData(GALLERY_ITEMS_FILE_PATH);
+        galleryItems = galleryItems.filter(item => item.userId !== userId);
+        await writeData(GALLERY_ITEMS_FILE_PATH, galleryItems);
+
+        let chatMessages = await readData(CHAT_MESSAGES_FILE_PATH);
+        chatMessages = chatMessages.filter(msg => msg.userId !== userId);
+        await writeData(CHAT_MESSAGES_FILE_PATH, chatMessages);
+        
+        let calorieChecks = await readData(CALORIE_CHECKS_FILE_PATH);
+        calorieChecks = calorieChecks.filter(chk => chk.userId !== userId);
+        await writeData(CALORIE_CHECKS_FILE_PATH, calorieChecks);
+
+        let foodComparisons = await readData(FOOD_COMPARISONS_FILE_PATH);
+        foodComparisons = foodComparisons.filter(cmp => cmp.userId !== userId);
+        await writeData(FOOD_COMPARISONS_FILE_PATH, foodComparisons);
+
+    } catch (error) {
+        console.error('Error during cascading delete:', error);
+        // Continue even if some cascading deletes fail, user is already marked for deletion from users.json
+    }
+
+    res.status(200).json({ detail: 'User and associated data deleted successfully.' });
+});
+
+// Admin points/streak management endpoints (Inspired by Python version - Memory 6119c37f-0f58-4869-9620-de1c9ae8c006)
+// POST /admin/users/:userId/reset-points-streak
+adminRouter.post('/users/:userId/reset-points-streak', async (req, res) => {
+    const { userId } = req.params;
+    const users = await readData(USERS_FILE_PATH);
+    const userIndex = users.findIndex(u => u.id === userId);
+
+    if (userIndex === -1) {
+        return res.status(404).json({ detail: 'User not found.' });
+    }
+
+    users[userIndex].points = 0;
+    users[userIndex].streak_days = 0;
+    // Optionally, you might want to reset level as well, or handle it based on points.
+    // users[userIndex].level = 1; 
+
+    await writeData(USERS_FILE_PATH, users);
+    const { password, ...updatedUser } = users[userIndex];
+    res.json(updatedUser);
+});
+
+// POST /admin/users/:userId/update-points
+adminRouter.post('/users/:userId/update-points', async (req, res) => {
+    const { userId } = req.params;
+    const { new_points } = req.body;
+
+    if (typeof new_points !== 'number' || new_points < 0) {
+        return res.status(400).json({ detail: 'Invalid new_points value. Must be a non-negative number.' });
+    }
+
+    const users = await readData(USERS_FILE_PATH);
+    const userIndex = users.findIndex(u => u.id === userId);
+
+    if (userIndex === -1) {
+        return res.status(404).json({ detail: 'User not found.' });
+    }
+
+    users[userIndex].points = new_points;
+    // Optionally, recalculate level based on new points
+    // users[userIndex].level = calculateLevel(new_points); 
+
+    await writeData(USERS_FILE_PATH, users);
+    const { password, ...updatedUser } = users[userIndex];
+    res.json(updatedUser);
+});
+
+// TODO: Consider adding a calculateLevel function if level should be dynamic based on points.
+
+apiRouter.use('/admin', adminRouter); // Mount admin router under /api/admin
+app.use('/api', apiRouter); // Mount main API router
+
+
+// --- GALLERY ---
+apiRouter.get('/gallery', async (req, res) => {
+    try {
+        // Use GALLERY_ITEMS_FILE_PATH defined at the top
+        const galleryItems = await readData(GALLERY_ITEMS_FILE_PATH);
+        // Sort by timestamp, newest first
+        const sortedItems = galleryItems.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        res.json(sortedItems);
+    } catch (error) {
+        console.error('Error fetching gallery items:', error);
+        res.status(500).json({ detail: 'Failed to fetch gallery items.' });
+    }
+});
+
+// Use galleryUpload defined at the top
+apiRouter.post('/gallery/upload', authenticateToken, galleryUpload.single('galleryImage'), async (req, res) => {
+    const { title } = req.body;
+    const userId = req.user.userId;
+    const username = req.user.username;
+
+    if (!req.file) {
+        return res.status(400).json({ detail: 'No image file provided.' });
+    }
+
+    const newGalleryItem = {
+        id: uuidv4(),
+        filename: req.file.filename, // filename from multer
+        imageUrl: `/uploads/gallery_images/${req.file.filename}`,
+        title: title || 'Geen titel',
+        uploaderId: userId,
+        uploaderUsername: username,
+        timestamp: new Date().toISOString(),
+        likes: 0 // Initialize likes
+    };
+
+    try {
+        const galleryItems = await readData(GALLERY_ITEMS_FILE_PATH);
+        galleryItems.push(newGalleryItem);
+        await writeData(GALLERY_ITEMS_FILE_PATH, galleryItems);
+        res.status(201).json(newGalleryItem);
+    } catch (error) {
+        console.error('Error saving gallery item:', error);
+        // Attempt to delete uploaded file if DB save fails to prevent orphaned files
+        // Use GALLERY_IMAGES_DIR defined at the top
+        try {
+            await fs.unlink(path.join(GALLERY_IMAGES_DIR, req.file.filename));
+        } catch (unlinkError) {
+            console.error('Error deleting orphaned gallery file after save failure:', unlinkError);
+        }
+        res.status(500).json({ detail: 'Failed to save gallery item.' });
+    }
+});
+
+// --- QUESTIONS API ---
+apiRouter.get('/questions', authenticateToken, async (req, res) => {
+    try {
+        const allQuestions = await readData(QUESTIONS_FILE_PATH);
+        // Strip correct answers and explanations before sending to client
+        const questionsForClient = allQuestions.map(q => {
+            const { correct_options, explanation, ...questionData } = q;
+            return questionData;
+        });
+        res.json(questionsForClient);
+    } catch (error) {
+        console.error('Error reading questions file:', error);
+        res.status(500).json({ detail: 'Failed to retrieve questions.' });
+    }
+});
+
+apiRouter.post('/questions/submit', authenticateToken, async (req, res) => {
+    const userId = req.user.userId;
+    const userAnswers = req.body.answers; // Verwacht formaat: { "q1_id": "a_id", "q2_id": "c_id" }
+
+    if (!userAnswers || typeof userAnswers !== 'object' || Object.keys(userAnswers).length === 0) {
+        return res.status(400).json({ detail: 'No answers provided or invalid format.' });
+    }
+
+    try {
+        const allQuestions = await readData(QUESTIONS_FILE_PATH);
+        if (!allQuestions || allQuestions.length === 0) {
+            return res.status(500).json({ detail: 'No questions found in the system. Please ask an admin to add them.' });
+        }
+
+        let score = 0;
+        const results = [];
+        let totalAnsweredQuestions = 0;
+
+        for (const question of allQuestions) {
+            const userAnswerId = userAnswers[question.id];
+            if (userAnswerId !== undefined) { // Check if user answered this question
+                totalAnsweredQuestions++;
+                const isCorrect = question.correct_options.includes(userAnswerId);
+                if (isCorrect) {
+                    score++;
+                }
+                results.push({
+                    questionId: question.id,
+                    questionText: question.text, // For context in response
+                    userAnswerId: userAnswerId,
+                    isCorrect: isCorrect,
+                    correctOptionIds: question.correct_options, // Send correct options for learning
+                    explanation: question.explanation // Send explanation
+                });
+            }
+        }
+        
+        if (totalAnsweredQuestions === 0) {
+             return res.status(400).json({ detail: 'No valid questions were answered.' });
+        }
+
+        const pointsEarned = score * POINTS_PER_CORRECT_QUESTION;
+
+        // Update user points
+        const users = await readData(USERS_FILE_PATH);
+        const userIndex = users.findIndex(u => u.id === userId);
+        if (userIndex !== -1) {
+            users[userIndex].points = (users[userIndex].points || 0) + pointsEarned;
+            users[userIndex].level = calculateUserLevel(users[userIndex].points);
+            // TODO: Consider adding a 'quiz_master' badge or similar based on performance
+            await writeData(USERS_FILE_PATH, users);
+        }
+
+        res.json({
+            score: score,
+            totalAnswered: totalAnsweredQuestions,
+            totalQuestionsInSet: allQuestions.length,
+            points_earned: pointsEarned,
+            results: results
+        });
+
+    } catch (error) {
+        console.error('Error processing question submission:', error);
+        res.status(500).json({ detail: 'Failed to process submission.' });
+    }
+});
+
+// Function to create initial user accounts if they don't exist
+const createInitialUserAccounts = async () => {
+    // Create test users for each class
+    const usersToCreate = [
+        // Klas A students
+        { username: 'leerling1a', password: 'klasA123', class_code: 'KlasA', role: 'student' },
+        { username: 'leerling2a', password: 'klasA123', class_code: 'KlasA', role: 'student' },
+        { username: 'leerling3a', password: 'klasA123', class_code: 'KlasA', role: 'student' },
+        
+        // Klas B students
+        { username: 'leerling1b', password: 'klasB123', class_code: 'KlasB', role: 'student' },
+        { username: 'leerling2b', password: 'klasB123', class_code: 'KlasB', role: 'student' },
+        
+        // Klas C students
+        { username: 'leerling1c', password: 'klasC123', class_code: 'KlasC', role: 'student' },
+        { username: 'leerling2c', password: 'klasC123', class_code: 'KlasC', role: 'student' },
+        
+        // Admin user
+        { username: 'docent', password: 'docent123', class_code: 'KlasA', role: 'admin' }
+    ];
+
+    try {
+        let users = [];
+        try {
+            users = await readData(USERS_FILE_PATH);
+        } catch (error) {
+            console.log('Creating new users file...');
+            users = [];
+        }
+        
+        let usersModified = false;
+        const saltRounds = 10; // Cost factor for bcrypt
+
+        for (const userSpec of usersToCreate) {
+            const existingUser = users.find(u => u.username === userSpec.username);
+            if (!existingUser) {
+                const hashedPassword = await bcrypt.hash(userSpec.password, saltRounds);
+                const newUser = {
+                    id: uuidv4(),
+                    username: userSpec.username,
+                    password: hashedPassword,
+                    class_code: userSpec.class_code,
+                    role: userSpec.role || 'student',
+                    points: Math.floor(Math.random() * 100), // Random points for demo
+                    level: 1,
+                    streak_days: Math.floor(Math.random() * 10), // Random streak for demo
+                    last_submission_date: new Date().toISOString().split('T')[0],
+                    badges: [],
+                    created_at: new Date().toISOString()
+                };
+                users.push(newUser);
+                usersModified = true;
+                console.log(`User account '${userSpec.username}' created.`);
+            } else {
+                console.log(`User account '${userSpec.username}' already exists.`);
+            }
+        }
+
+        if (usersModified) {
+            await writeData(USERS_FILE_PATH, users);
+            console.log('Users file updated with new accounts.');
+        }
+    } catch (error) {
+        console.error('Error creating initial user accounts:', error);
+    }
+};
+
+
+// --- SERVER START & INITIALIZATION ---
+const initializeApp = async () => {
+    try {
+        // Ensure upload directories exist
+        await fs.ensureDir(UPLOADS_DIR);
+        await fs.ensureDir(FOOD_IMAGES_DIR);
+        await fs.ensureDir(GALLERY_IMAGES_DIR);
+
+        // Ensure JSON data files exist
+        const filesToInitialize = [
+            USERS_FILE_PATH,
+            FOOD_ENTRIES_FILE_PATH,
+            GALLERY_ITEMS_FILE_PATH,
+            CHAT_MESSAGES_FILE_PATH,
+            CALORIE_CHECKS_FILE_PATH,
+            FOOD_COMPARISONS_FILE_PATH,
+            QUESTIONS_FILE_PATH
+        ];
+        for (const filePath of filesToInitialize) {
+            try {
+                await fs.access(filePath);
+            } catch (e) {
+                if (e.code === 'ENOENT') {
+                    await fs.writeFile(filePath, JSON.stringify([], null, 2));
+                    console.log(`Initialized empty data file: ${filePath}`);
+                }
+            }
+        }
+        
+        // Create initial user accounts after ensuring files exist
+        await createInitialUserAccounts(); // Added call here
+
+        app.listen(PORT, () => {
+            console.log(`Node.js server listening on port ${PORT}`);
+            console.log('SnackCheck backend is ready!');
+            if (!process.env.SECRET_KEY || process.env.SECRET_KEY === 'jouw-geheime-sleutel-hier') {
+                console.warn('WARNING: SECRET_KEY is not set or is using the default insecure key. Please set it in your .env file.');
+            }
+            if (!process.env.HUGGING_FACE_API_TOKEN) {
+                console.warn('WARNING: HUGGING_FACE_API_TOKEN is not set. AI features might be limited or non-functional.');
+            }
+        });
+
+    } catch (error) {
+        console.error('Failed to initialize or start the application:', error);
+        process.exit(1);
+    }
+};
+
+initializeApp();

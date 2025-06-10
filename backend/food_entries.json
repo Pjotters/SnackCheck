@@ -65,5 +65,97 @@
       "ai_suggestions": "Probeer de volgende keer een foto te maken voor een specifiekere analyse!",
       "new_badges": []
     }
+  },
+  {
+    "id": "54224dcb-8bcc-431e-82ad-a787e907bc01",
+    "userId": "57a596a1-ad09-4244-9cd8-67841bc0aa8b",
+    "username": "docent",
+    "food_name": "test",
+    "meal_type": "snack",
+    "quantity": 1,
+    "image_url": null,
+    "timestamp": "2025-06-07T17:58:36.055Z",
+    "ai_analysis_result": {
+      "points_earned": 2,
+      "ai_score": 5,
+      "calories_estimated": 150,
+      "nutrition_info": {
+        "detected_food": "test",
+        "ai_confidence": 0,
+        "source": "placeholder"
+      },
+      "ai_feedback": "Je hebt test gelogd.",
+      "ai_suggestions": "Probeer de volgende keer een foto te maken voor een specifiekere analyse!",
+      "new_badges": []
+    }
+  },
+  {
+    "id": "76c9653d-8f1a-4ce6-8d38-50c7603b0d97",
+    "userId": "c6f14da5-2f9b-4725-b166-6f81cd567f90",
+    "username": "leerling1a",
+    "food_name": "appel",
+    "meal_type": "snack",
+    "quantity": 100,
+    "image_url": null,
+    "timestamp": "2025-06-08T18:21:17.121Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 5,
+      "calories_estimated": 15000,
+      "nutrition_info": {
+        "detected_food": "appel",
+        "ai_confidence": 0,
+        "source": "placeholder"
+      },
+      "ai_feedback": "Je hebt appel gelogd.",
+      "ai_suggestions": "Probeer de volgende keer een foto te maken voor een specifiekere analyse!",
+      "new_badges": []
+    }
+  },
+  {
+    "id": "db4f9f57-0886-4b8a-b7de-a1e960fd90de",
+    "userId": "c6f14da5-2f9b-4725-b166-6f81cd567f90",
+    "username": "leerling1a",
+    "food_name": "appel",
+    "meal_type": "snack",
+    "quantity": 100,
+    "image_url": null,
+    "timestamp": "2025-06-08T18:22:27.007Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 5,
+      "calories_estimated": 15000,
+      "nutrition_info": {
+        "detected_food": "appel",
+        "ai_confidence": 0,
+        "source": "placeholder"
+      },
+      "ai_feedback": "Je hebt appel gelogd.",
+      "ai_suggestions": "Probeer de volgende keer een foto te maken voor een specifiekere analyse!",
+      "new_badges": []
+    }
+  },
+  {
+    "id": "7593ea09-3593-436c-b9a5-45d44ce4f639",
+    "userId": "c6f14da5-2f9b-4725-b166-6f81cd567f90",
+    "username": "leerling1a",
+    "food_name": "appel",
+    "meal_type": "snack",
+    "quantity": 100,
+    "image_url": null,
+    "timestamp": "2025-06-08T18:23:23.409Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 5,
+      "calories_estimated": 15000,
+      "nutrition_info": {
+        "detected_food": "appel",
+        "ai_confidence": 0,
+        "source": "placeholder"
+      },
+      "ai_feedback": "Je hebt appel gelogd.",
+      "ai_suggestions": "Probeer de volgende keer een foto te maken voor een specifiekere analyse!",
+      "new_badges": []
+    }
   }
 ]

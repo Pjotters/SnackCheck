@@ -1,0 +1,157 @@
+[
+  {
+    "id": "1e110292-a96a-4cfa-89b1-4b0acdd8e8ba",
+    "userId": "123",
+    "username": "testuser",
+    "food_name": "druiven",
+    "meal_type": "snack",
+    "quantity": 100,
+    "image_url": null,
+    "timestamp": "2025-06-09T20:09:21.809Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 7,
+      "calories_estimated": 100,
+      "nutrition_info": {
+        "detected_food": "druiven",
+        "ai_confidence": 0,
+        "source": "openfoodfacts",
+        "calories": 76,
+        "protein": 0.5,
+        "fat": 0.4,
+        "carbs": 17,
+        "fiber": 1.5,
+        "sugars": 16,
+        "salt": 0,
+        "nutriscore": "a"
+      },
+      "ai_feedback": "druiven is Nutri-Score: A, bevat veel suiker. Kijk uit, dit is een minder gezonde keuze.",
+      "ai_suggestions": "Kies vaker voor producten met minder toegevoegde suikers.",
+      "new_badges": []
+    }
+  },
+  {
+    "id": "775a5877-7fc0-488e-8895-942d6425daac",
+    "userId": "123",
+    "username": "testuser",
+    "food_name": "druiven",
+    "meal_type": "snack",
+    "quantity": 100,
+    "image_url": null,
+    "timestamp": "2025-06-09T20:10:58.394Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 7,
+      "calories_estimated": 100,
+      "nutrition_info": {
+        "detected_food": "druiven",
+        "ai_confidence": 0,
+        "source": "openfoodfacts",
+        "calories": 76,
+        "protein": 0.5,
+        "fat": 0.4,
+        "carbs": 17,
+        "fiber": 1.5,
+        "sugars": 16,
+        "salt": 0,
+        "nutriscore": "a"
+      },
+      "ai_feedback": "druiven is Nutri-Score: A, bevat veel suiker. Kijk uit, dit is een minder gezonde keuze.",
+      "ai_suggestions": "Kies vaker voor producten met minder toegevoegde suikers.",
+      "new_badges": []
+    }
+  },
+  {
+    "id": "7f8403a6-2c63-4529-a53f-7b3b6f142b69",
+    "userId": "123",
+    "username": "testuser",
+    "food_name": "druiven",
+    "meal_type": "snack",
+    "quantity": 100,
+    "image_url": null,
+    "timestamp": "2025-06-09T20:15:43.434Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 7,
+      "calories_estimated": 100,
+      "nutrition_info": {
+        "detected_food": "druiven",
+        "ai_confidence": 0,
+        "source": "openfoodfacts",
+        "calories": 76,
+        "protein": 0.5,
+        "fat": 0.4,
+        "carbs": 17,
+        "fiber": 1.5,
+        "sugars": 16,
+        "salt": 0,
+        "nutriscore": "a"
+      },
+      "ai_feedback": "druiven is Nutri-Score: A, bevat veel suiker. Kijk uit, dit is een minder gezonde keuze.",
+      "ai_suggestions": "Kies vaker voor producten met minder toegevoegde suikers.",
+      "new_badges": []
+    }
+  },
+  {
+    "id": "0af2c672-b5fe-4012-9201-ee3ca2e0a21b",
+    "userId": "123",
+    "username": "testuser",
+    "food_name": "druiven",
+    "meal_type": "snack",
+    "quantity": 100,
+    "image_url": null,
+    "timestamp": "2025-06-09T20:20:31.190Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 7,
+      "calories_estimated": 100,
+      "nutrition_info": {
+        "detected_food": "druiven",
+        "ai_confidence": 0,
+        "source": "openfoodfacts",
+        "calories": 76,
+        "protein": 0.5,
+        "fat": 0.4,
+        "carbs": 17,
+        "fiber": 1.5,
+        "sugars": 16,
+        "salt": 0,
+        "nutriscore": "a"
+      },
+      "ai_feedback": "druiven is Nutri-Score: A, bevat veel suiker. Kijk uit, dit is een minder gezonde keuze.",
+      "ai_suggestions": "Kies vaker voor producten met minder toegevoegde suikers.",
+      "new_badges": []
+    }
+  },
+  {
+    "id": "917c6351-b555-4256-8ffb-1dc0ff39fd8d",
+    "userId": "123",
+    "username": "testuser",
+    "food_name": "appel",
+    "meal_type": "snack",
+    "quantity": 150,
+    "image_url": null,
+    "timestamp": "2025-06-09T20:24:39.147Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 7,
+      "calories_estimated": 100,
+      "nutrition_info": {
+        "detected_food": "appel",
+        "ai_confidence": 0,
+        "source": "openfoodfacts",
+        "calories": 69,
+        "protein": 9.8,
+        "fat": 0,
+        "carbs": 5.9,
+        "fiber": 0,
+        "sugars": 5.6,
+        "salt": 0.146,
+        "nutriscore": "a"
+      },
+      "ai_feedback": "appel is Nutri-Score: A.",
+      "ai_suggestions": "Kies vaker voor volkoren producten voor meer vezels.",
+      "new_badges": []
+    }
+  }
+]

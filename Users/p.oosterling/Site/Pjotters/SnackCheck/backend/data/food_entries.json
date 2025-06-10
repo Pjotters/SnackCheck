@@ -1,0 +1,95 @@
+[
+  {
+    "id": "20670949-3b16-4219-8fab-4a45935cd7b1",
+    "userId": "123",
+    "username": "testuser",
+    "food_name": "banaan",
+    "meal_type": "snack",
+    "quantity": 120,
+    "image_url": null,
+    "timestamp": "2025-06-09T20:02:34.207Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 7,
+      "calories_estimated": 100,
+      "nutrition_info": {
+        "detected_food": "banaan",
+        "ai_confidence": 0,
+        "source": "openfoodfacts",
+        "calories": 84,
+        "protein": 14.9,
+        "fat": 0.5,
+        "carbs": 4.8,
+        "fiber": 0,
+        "sugars": 4,
+        "salt": 0,
+        "nutriscore": "a"
+      },
+      "ai_feedback": "banaan is Nutri-Score: A, rijk aan eiwitten.",
+      "ai_suggestions": "Kies vaker voor volkoren producten voor meer vezels.",
+      "new_badges": []
+    }
+  },
+  {
+    "id": "27e49cda-1c7c-4969-8bfb-a25021b79072",
+    "userId": "123",
+    "username": "testuser",
+    "food_name": "druiven",
+    "meal_type": "snack",
+    "quantity": 100,
+    "image_url": null,
+    "timestamp": "2025-06-09T20:04:37.165Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 7,
+      "calories_estimated": 100,
+      "nutrition_info": {
+        "detected_food": "druiven",
+        "ai_confidence": 0,
+        "source": "openfoodfacts",
+        "calories": 76,
+        "protein": 0.5,
+        "fat": 0.4,
+        "carbs": 17,
+        "fiber": 1.5,
+        "sugars": 16,
+        "salt": 0,
+        "nutriscore": "a"
+      },
+      "ai_feedback": "druiven is Nutri-Score: A, bevat veel suiker. Kijk uit, dit is een minder gezonde keuze.",
+      "ai_suggestions": "Kies vaker voor producten met minder toegevoegde suikers.",
+      "new_badges": []
+    }
+  },
+  {
+    "id": "24f76f3b-204a-452a-8ccf-c6dcab66a6f9",
+    "userId": "123",
+    "username": "testuser",
+    "food_name": "druiven",
+    "meal_type": "snack",
+    "quantity": 100,
+    "image_url": null,
+    "timestamp": "2025-06-09T20:06:59.965Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 7,
+      "calories_estimated": 100,
+      "nutrition_info": {
+        "detected_food": "druiven",
+        "ai_confidence": 0,
+        "source": "openfoodfacts",
+        "calories": 76,
+        "protein": 0.5,
+        "fat": 0.4,
+        "carbs": 17,
+        "fiber": 1.5,
+        "sugars": 16,
+        "salt": 0,
+        "nutriscore": "a"
+      },
+      "ai_feedback": "druiven is Nutri-Score: A, bevat veel suiker. Kijk uit, dit is een minder gezonde keuze.",
+      "ai_suggestions": "Kies vaker voor producten met minder toegevoegde suikers.",
+      "new_badges": []
+    }
+  }
+]

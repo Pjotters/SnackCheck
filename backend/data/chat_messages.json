@@ -1,0 +1,23 @@
+{
+  "conversations": [
+    {
+      "id": "1",
+      "userId": "user123",
+      "adminId": "admin1",
+      "messages": [
+        {
+          "id": "1",
+          "sender": "user",
+          "content": "Hallo, ik heb een vraag over mijn voeding.",
+          "timestamp": "2025-06-09T20:00:00Z"
+        },
+        {
+          "id": "2",
+          "sender": "admin",
+          "content": "Hallo! Natuurlijk, waar kan ik je mee helpen?",
+          "timestamp": "2025-06-09T20:05:00Z"
+        }
+      ]
+    }
+  ]
+}

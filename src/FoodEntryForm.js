@@ -32,21 +32,66 @@ const FoodEntryForm = ({ onEntryAdded }) => {
     const formData = new FormData();
     formData.append('food_name', foodName);
     formData.append('quantity', quantity);
+    formData.append('meal_type', 'snack');
     if (image) {
       formData.append('image', image);
     }
 
     try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('Geen authenticatietoken gevonden. Log opnieuw in.');
+      }
+
       const response = await axios.post(`${API}/food-entries`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
-        },
+          'Authorization': `Bearer ${token}`
+        }
       });
-      setAnalysisResult(response.data.analysis_result);
-      onEntryAdded(response.data.entry); // Callback to update user stats or gallery
+      
+      console.log('API Response:', response.data);
+      
+      // Update de UI met de ontvangen gegevens
+      if (response.data) {
+        // Zorg ervoor dat we de juiste veldnamen gebruiken
+        const formattedData = {
+          ...response.data,
+          ai_analysis_result: {
+            ...response.data,
+            // Verwijder de root-level velden die we niet dubbel willen hebben
+            food_name: undefined,
+            quantity: undefined,
+            meal_type: undefined,
+            timestamp: undefined,
+            user_id: undefined,
+            username: undefined
+          }
+        };
+        
+        setAnalysisResult(formattedData.ai_analysis_result);
+        // Roep de callback aan om de lijst met voedselinvoeren bij te werken
+        if (typeof onEntryAdded === 'function') {
+          onEntryAdded(formattedData);
+        }
+        // Toon een succesmelding
+        alert('Voedsel succesvol toegevoegd!');
+        // Reset het formulier
+        setFoodName('');
+        setQuantity(1);
+        setImage(null);
+        setImagePreview(null);
+      }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Fout bij het verwerken van het voedsel.');
-      console.error("Food Entry Error:", err.response || err);
+      const errorMessage = err.response?.data?.detail || 
+                         err.response?.data?.message || 
+                         'Fout bij het verwerken van het voedsel.';
+      setError(errorMessage);
+      console.error("Food Entry Error:", {
+        error: err,
+        response: err.response,
+        config: err.config
+      });
     } finally {
       setLoading(false);
     }

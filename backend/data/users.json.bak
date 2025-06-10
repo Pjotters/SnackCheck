@@ -1,0 +1,28 @@
+[
+  {
+    "id": "123",
+    "username": "testuser",
+    "password": "test123",
+    "email": "test@example.com",
+    "points": 30,
+    "level": 1,
+    "streak_days": 0,
+    "last_login": "2025-06-09T19:00:00.000Z",
+    "badges": [],
+    "food_history": [
+      {
+        "id": "ae2db898-c82f-4d20-b7a7-2368d446434f",
+        "food_name": "appel",
+        "points": 10,
+        "timestamp": "2025-06-09T19:24:00.230Z"
+      }
+    ],
+    "daily_goals": {
+      "calories": 2000,
+      "protein": 50,
+      "carbs": 250,
+      "fat": 70,
+      "fruits_veggies": 5
+    }
+  }
+]

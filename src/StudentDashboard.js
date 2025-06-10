@@ -22,9 +22,24 @@ const StudentDashboard = ({ user }) => {
 
   const fetchEntries = async () => {
     try {
-      const response = await axios.get(`${API}/food-entries`);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('Geen authenticatietoken gevonden');
+        return;
+      }
+
+      const response = await axios.get(`${API}/food-entries`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
       if (Array.isArray(response.data)) {
-        setEntries(response.data);
+        // Sorteer op timestamp, nieuwste eerst
+        const sortedEntries = [...response.data].sort((a, b) => 
+          new Date(b.timestamp) - new Date(a.timestamp)
+        );
+        setEntries(sortedEntries);
       } else {
         console.error('Error: /food-entries did not return an array:', response.data);
         setEntries([]); // Default to empty array to prevent .map errors

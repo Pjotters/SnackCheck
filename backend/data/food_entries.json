@@ -1,0 +1,70 @@
+[
+  {
+    "id": "2d6793f0-a8fe-49f2-bcb9-d03f7e553af2",
+    "userId": "123",
+    "username": "testuser",
+    "food_name": "appel",
+    "meal_type": "snack",
+    "quantity": 150,
+    "image_url": null,
+    "timestamp": "2025-06-09T19:18:58.256Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 6,
+      "calories_estimated": 69,
+      "nutrition_info": {
+        "detected_food": "appel",
+        "ai_confidence": 0,
+        "source": "openfoodfacts",
+        "calories": 69,
+        "protein": 9.8,
+        "fat": 0,
+        "carbs": 5.9,
+        "fiber": 0,
+        "sugars": 5.6,
+        "salt": 0.146,
+        "nutriscore": "a"
+      },
+      "ai_feedback": "appel is Nutri-Score: A.",
+      "ai_suggestions": "Kies vaker voor volkoren producten voor meer vezels.",
+      "new_badges": [],
+      "current_points": 10,
+      "current_level": 1,
+      "streak_days": 0
+    }
+  },
+  {
+    "id": "ae2db898-c82f-4d20-b7a7-2368d446434f",
+    "userId": "123",
+    "username": "testuser",
+    "food_name": "appel",
+    "meal_type": "snack",
+    "quantity": 150,
+    "image_url": null,
+    "timestamp": "2025-06-09T19:24:00.230Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 6,
+      "calories_estimated": 69,
+      "nutrition_info": {
+        "detected_food": "appel",
+        "ai_confidence": 0,
+        "source": "openfoodfacts",
+        "calories": 69,
+        "protein": 9.8,
+        "fat": 0,
+        "carbs": 5.9,
+        "fiber": 0,
+        "sugars": 5.6,
+        "salt": 0.146,
+        "nutriscore": "a"
+      },
+      "ai_feedback": "appel is Nutri-Score: A.",
+      "ai_suggestions": "Kies vaker voor volkoren producten voor meer vezels.",
+      "new_badges": [],
+      "current_points": 20,
+      "current_level": 1,
+      "streak_days": 0
+    }
+  }
+]

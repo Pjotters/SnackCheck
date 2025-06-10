@@ -1,0 +1,33 @@
+[
+  {
+    "id": "35c2218b-7aa4-46ab-a6c7-0e8316e6fd46",
+    "userId": "123",
+    "username": "testuser",
+    "food_name": "appel",
+    "meal_type": "snack",
+    "quantity": 150,
+    "image_url": null,
+    "timestamp": "2025-06-09T19:58:56.828Z",
+    "ai_analysis_result": {
+      "points_earned": 10,
+      "ai_score": 7,
+      "calories_estimated": 100,
+      "nutrition_info": {
+        "detected_food": "appel",
+        "ai_confidence": 0,
+        "source": "openfoodfacts",
+        "calories": 69,
+        "protein": 9.8,
+        "fat": 0,
+        "carbs": 5.9,
+        "fiber": 0,
+        "sugars": 5.6,
+        "salt": 0.146,
+        "nutriscore": "a"
+      },
+      "ai_feedback": "appel is Nutri-Score: A.",
+      "ai_suggestions": "Kies vaker voor volkoren producten voor meer vezels.",
+      "new_badges": []
+    }
+  }
+]

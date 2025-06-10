@@ -1,0 +1,28 @@
+{
+  "questions": [
+    {
+      "id": "1",
+      "question": "Hoeveel gram groente zou een volwassene dagelijks moeten eten?",
+      "options": [
+        {"id": "a", "text": "100 gram"},
+        {"id": "b", "text": "250 gram", "correct": true},
+        {"id": "c", "text": "500 gram"},
+        {"id": "d", "text": "750 gram"}
+      ],
+      "explanation": "Volgens het Voedingscentrum is de aanbevolen dagelijkse hoeveelheid groente voor volwassenen 250 gram.",
+      "points": 10
+    },
+    {
+      "id": "2",
+      "question": "Welke van deze voedingsmiddelen bevat de meeste eiwitten per 100 gram?",
+      "options": [
+        {"id": "a", "text": "Kipfilet", "correct": true},
+        {"id": "b", "text": "Zalm"},
+        {"id": "c", "text": "Kikkererwten"},
+        {"id": "d", "text": "Kwark"}
+      ],
+      "explanation": "Kipfilet bevat ongeveer 31 gram eiwit per 100 gram, terwijl zalm 25 gram, kikkererwten 19 gram en kwark 9 gram bevat.",
+      "points": 15
+    }
+  ]
+}

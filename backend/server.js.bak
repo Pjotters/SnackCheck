@@ -12,6 +12,7 @@ const bcrypt = require('bcrypt'); // Added for password hashing
 // --- CONFIGURATION & CONSTANTS ---
 const PORT = process.env.PORT || 3001;
 const SECRET_KEY = process.env.SECRET_KEY || 'jouw-geheime-sleutel-hier'; // Gebruik .env bestand in productie!
+const JWT_SECRET = process.env.JWT_SECRET || 'jwt-dev-secret';
 const HUGGING_FACE_API_TOKEN = process.env.HUGGING_FACE_API_TOKEN; // Zet dit in .env
 const EDAMAM_APP_ID = process.env.EDAMAM_APP_ID;
 const EDAMAM_APP_KEY = process.env.EDAMAM_APP_KEY;
@@ -36,8 +37,34 @@ const GALLERY_MIN_AI_SCORE = 7; // Min score for an item to be considered for ga
 const app = express();
 
 // --- MIDDLEWARE ---
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://snackcheck.vercel.app',
+  'https://ff2a-94-213-76-216.ngrok-free.app'
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Authorization']
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
+
+// Handle preflight requests
+app.options('*', cors(corsOptions));
 app.use('/uploads/food_images', express.static(FOOD_IMAGES_DIR)); // Serve uploaded food images
 app.use('/uploads/gallery_images', express.static(GALLERY_IMAGES_DIR)); // Serve uploaded gallery images
 
@@ -204,6 +231,7 @@ async function transformAiAnalysis(rawAnalysisResult, foodName, quantity) {
     let detectedFoodByAI = foodName; // Default to user input
     let confidence = 0;
     let nutritionData = null;
+    let newBadges = []; // Initialize empty array for badges
 
     if (rawAnalysisResult && Array.isArray(rawAnalysisResult) && rawAnalysisResult.length > 0) {
         detectedFoodByAI = rawAnalysisResult[0].label.split(',')[0].trim(); // Neem eerste label, trim spaties
@@ -223,10 +251,9 @@ async function transformAiAnalysis(rawAnalysisResult, foodName, quantity) {
     // Default waarden als Edamam faalt
     let aiScore = 5;
     let caloriesEstimated = 150 * (quantity || 1);
-    let pointsEarned = 2; // Basispunten voor loggen
+    let pointsEarned = POINTS_BASE; // Gebruik de constante voor basispunten
     let feedback = `Je hebt ${foodName} gelogd.`;
     let suggestions = "Probeer de volgende keer een foto te maken voor een specifiekere analyse!";
-    let newBadges = [];
     let nutritionInfo = {
         detected_food: detectedFoodByAI,
         ai_confidence: confidence, // Confidence van HuggingFace
@@ -245,20 +272,20 @@ async function transformAiAnalysis(rawAnalysisResult, foodName, quantity) {
         };
         caloriesEstimated = nutritionData.calories * (quantity || 1); // Stel quantity is in eenheden van 100g
 
-        if (nutritionData.calories < 100 && nutritionData.protein > 5) { // Voorbeeld "gezond"
+        if (nutritionData.calories < 100 && nutritionData.protein > 5) { // Gezond
             aiScore = 8;
-            pointsEarned = POINTS_PER_HEALTHY_ITEM;
+            pointsEarned = POINTS_HEALTHY;
             feedback = `Goede keuze! ${nutritionData.label} is voedzaam. Het bevat ${nutritionData.calories} kcal per 100g.`;
             suggestions = "Blijf zo doorgaan met gezonde keuzes!";
             if (nutritionData.protein > 15) newBadges.push('protein_power');
-        } else if (nutritionData.calories > 400) { // Voorbeeld "minder gezond"
+        } else if (nutritionData.calories > 400) { // Minder gezond
             aiScore = 3;
-            pointsEarned = 1;
+            pointsEarned = POINTS_UNHEALTHY;
             feedback = `${nutritionData.label} bevat ${nutritionData.calories} kcal per 100g. Geniet met mate!`;
             suggestions = "Misschien de volgende keer een lichter alternatief?";
-        } else {
-            aiScore = 5; // Neutraal
-            pointsEarned = 3;
+        } else { // Neutraal
+            aiScore = 5;
+            pointsEarned = POINTS_NEUTRAL;
             feedback = `${nutritionData.label} (${nutritionData.calories} kcal/100g) is gelogd.`;
         }
         newBadges.push('nutrition_nerd'); // Badge voor succesvol Edamam gebruik
@@ -268,7 +295,7 @@ async function transformAiAnalysis(rawAnalysisResult, foodName, quantity) {
         if (commonHealthyKeywords.some(keyword => (detectedFoodByAI || foodName).toLowerCase().includes(keyword))) {
             aiScore = 7;
             caloriesEstimated = 70 * (quantity || 1);
-            pointsEarned = Math.floor(POINTS_PER_HEALTHY_ITEM / 2);
+            pointsEarned = Math.floor(POINTS_HEALTHY / 2); // Gebruik de constante
             feedback = `Gezonde keuze met ${detectedFoodByAI || foodName}! Kon geen gedetailleerde data vinden.`;
             suggestions = "Probeer een duidelijke foto of een specifiekere naam.";
         }
@@ -287,24 +314,28 @@ async function transformAiAnalysis(rawAnalysisResult, foodName, quantity) {
 
 // Function for getting nutritional info (for calorie checker & food comparison)
 async function getNutritionalInfo(foodName, quantity = 1) {
-    const nutritionData = await fetchNutritionFromEdamam(foodName);
+    try {
+        const nutritionData = await fetchNutritionFromEdamam(foodName);
 
-    if (nutritionData) {
-        return {
-            food_name: nutritionData.label || foodName, // Gebruik Edamam label indien beschikbaar
-            quantity: quantity,
-            calories_per_100g: nutritionData.calories,
-            protein_per_100g: nutritionData.protein,
-            fat_per_100g: nutritionData.fat,
-            carbs_per_100g: nutritionData.carbs,
-            estimated_calories: parseFloat((nutritionData.calories * quantity).toFixed(1)), // Stel quantity is in 100g eenheden
-            source: 'Edamam API',
-            feedback: `Details voor ${nutritionData.label || foodName} (${nutritionData.calories} kcal/100g).`
-        };
-    } else {
-        // Fallback als Edamam geen data vindt
-        console.warn(`No Edamam data for ${foodName} in getNutritionalInfo. Returning placeholder.`);
-        const randomCalories = Math.floor(Math.random() * 250) + 50; // 50-300
+        if (nutritionData) {
+            return {
+                food_name: nutritionData.label || foodName, // Gebruik Edamam label indien beschikbaar
+                quantity: quantity,
+                calories_per_100g: nutritionData.calories,
+                protein_per_100g: nutritionData.protein,
+                fat_per_100g: nutritionData.fat,
+                carbs_per_100g: nutritionData.carbs,
+                estimated_calories: parseFloat((nutritionData.calories * quantity).toFixed(1)),
+                source: 'Edamam',
+                feedback: `Voedingsinformatie voor ${nutritionData.label || foodName} (${quantity}x)`,
+                ai_score: 80, // Standaard score
+                new_badges: [] // Lege array om fouten te voorkomen
+            };
+        }
+    } catch (error) {
+        console.error('Error fetching nutritional info:', error);
+        // Fallback als de API niet beschikbaar is of een fout geeft
+        const randomCalories = Math.floor(Math.random() * 300) + 50; // Willekeurige waarde tussen 50-350 kcal/100g
         return {
             food_name: foodName,
             quantity: quantity,
@@ -314,13 +345,92 @@ async function getNutritionalInfo(foodName, quantity = 1) {
             carbs_per_100g: null,
             estimated_calories: parseFloat((randomCalories * quantity).toFixed(1)),
             source: 'Placeholder (Edamam lookup failed)',
-            feedback: `Kon geen gedetailleerde voedingsinformatie vinden voor ${foodName}. Schatting is ${randomCalories} kcal/100g.`
+            feedback: `Kon geen gedetailleerde voedingsinformatie vinden voor ${foodName}. Schatting is ${randomCalories} kcal/100g.`,
+            ai_score: 60, // Lagere score voor schattingen
+            new_badges: [] // Lege array om fouten te voorkomen
         };
     }
 }
 
 // --- API ROUTES ---
 const apiRouter = express.Router();
+
+// --- QUESTIONS ---
+// Get all questions (without correct answers)
+apiRouter.get('/questions', authenticateToken, async (req, res) => {
+    try {
+        const questions = await readData(QUESTIONS_FILE_PATH);
+        // Remove correct_answers and explanation from response
+        const questionsWithoutAnswers = questions.map(({ correct_answers, explanation, ...rest }) => rest);
+        res.json(questionsWithoutAnswers);
+    } catch (error) {
+        console.error('Error fetching questions:', error);
+        res.status(500).json({ detail: 'Failed to fetch questions' });
+    }
+});
+
+// Submit answers to questions
+apiRouter.post('/questions/submit', authenticateToken, async (req, res) => {
+    try {
+        const { answers } = req.body; // Array of { question_id, answers: [] }
+        if (!Array.isArray(answers)) {
+            return res.status(400).json({ detail: 'Answers should be an array' });
+        }
+
+        const questions = await readData(QUESTIONS_FILE_PATH);
+        const results = [];
+        let totalCorrect = 0;
+
+        // Process each submitted answer
+        for (const answer of answers) {
+            const question = questions.find(q => q.id === answer.question_id);
+            if (!question) continue;
+
+            // Check if answers are correct (order doesn't matter)
+            const isCorrect = 
+                answer.answers.length === question.correct_answers.length &&
+                answer.answers.every(ans => question.correct_answers.includes(ans));
+
+            if (isCorrect) {
+                totalCorrect++;
+            }
+
+            results.push({
+                question_id: question.id,
+                is_correct: isCorrect,
+                correct_answers: question.correct_answers,
+                explanation: question.explanation
+            });
+        }
+
+        // Calculate points (5 points per correct answer)
+        const pointsEarned = totalCorrect * POINTS_PER_CORRECT_QUESTION;
+        
+        // Update user points
+        if (pointsEarned > 0) {
+            const users = await readData(USERS_FILE_PATH);
+            const userIndex = users.findIndex(u => u.id === req.user.userId);
+            
+            if (userIndex !== -1) {
+                users[userIndex].points = (users[userIndex].points || 0) + pointsEarned;
+                users[userIndex].level = calculateUserLevel(users[userIndex].points);
+                await writeData(USERS_FILE_PATH, users);
+            }
+        }
+
+        // Return results and points
+        res.json({
+            results,
+            total_correct: totalCorrect,
+            total_questions: answers.length,
+            points_earned: pointsEarned
+        });
+
+    } catch (error) {
+        console.error('Error submitting answers:', error);
+        res.status(500).json({ detail: 'Failed to process answers' });
+    }
+});
 
 // --- AUTHENTICATION ---
 apiRouter.post('/login', async (req, res) => {
@@ -639,62 +749,30 @@ apiRouter.get('/gallery', authenticateToken, async (req, res) => {
         res.status(500).json({ detail: 'Failed to fetch gallery items' });
     }
 });
-    }
-    
+
+// --- USER PROFILE ---
+apiRouter.get('/users/me', authenticateToken, async (req, res) => {
     try {
         const users = await readData(USERS_FILE_PATH);
-        const user = users.find(u => u.username === username && u.class_code === class_code);
-
+        const user = users.find(u => u.id === req.user.userId);
+        
         if (!user) {
-            return res.status(401).json({ detail: 'Ongeldige gebruikersnaam of klascode' });
+            return res.status(404).json({ detail: 'Gebruiker niet gevonden' });
         }
         
-        // Controleer wachtwoord met bcrypt
-        const isPasswordValid = await bcrypt.compare(password, user.password);
+        // Verwijder gevoelige gegevens voordat we de gebruikersgegevens terugsturen
+        const { password, ...userData } = user;
         
-        if (!isPasswordValid) {
-            return res.status(401).json({ detail: 'Ongeldig wachtwoord' });
-        }
-
-        const accessToken = jwt.sign(
-            { 
-                userId: user.id, 
-                username: user.username, 
-                role: user.role,
-                class_code: user.class_code
-            }, 
-            SECRET_KEY, 
-            { expiresIn: '24h' }
-        );
-        
-        res.json({ 
-            token: accessToken,
-            user: {
-                id: user.id,
-                username: user.username,
-                role: user.role,
-                class_code: user.class_code,
-                points: user.points || 0,
-                level: user.level || 1,
-                streak_days: user.streak_days || 0,
-                last_submission_date: user.last_submission_date,
-                badges: user.badges || []
-            }
+        res.json({
+            ...userData,
+            points: userData.points || 0,
+            level: userData.level || 1,
+            streak_days: userData.streak_days || 0,
+            badges: userData.badges || []
         });
     } catch (error) {
-        console.error('Login error:', error);
-        res.status(500).json({ detail: 'Er is een fout opgetreden bij het inloggen' });
-    }
-});
-
-apiRouter.get('/users/me', authenticateToken, async (req, res) => {
-    const users = await readData(USERS_FILE_PATH);
-    const user = users.find(u => u.id === req.user.userId);
-    if (user) {
-        const { password, ...userData } = user; // Exclude password
-        res.json(userData);
-    } else {
-        res.status(404).json({ detail: 'User not found' });
+        console.error('Error fetching user profile:', error);
+        res.status(500).json({ detail: 'Er is een fout opgetreden bij het ophalen van het gebruikersprofiel' });
     }
 });
 
@@ -721,7 +799,7 @@ apiRouter.post('/food-entries', authenticateToken, upload.single('image'), async
         }
     }
 
-    const transformedAiResult = transformAiAnalysis(rawAiOutput.result, food_name, parseFloat(quantity) || 1);
+    const transformedAiResult = await transformAiAnalysis(rawAiOutput.result, food_name, parseFloat(quantity) || 1);
 
     const newEntry = {
         id: uuidv4(),
@@ -743,24 +821,61 @@ apiRouter.post('/food-entries', authenticateToken, upload.single('image'), async
     const users = await readData(USERS_FILE_PATH);
     const userIndex = users.findIndex(u => u.id === userId);
     if (userIndex !== -1) {
-        users[userIndex].points = (users[userIndex].points || 0) + transformedAiResult.points_earned;
+        // Basis punten voor het loggen
+        let pointsToAdd = transformedAiResult.points_earned || 0;
         
-        const streakChange = calculateNewStreak(users[userIndex].last_submission_date);
-        if (streakChange === true) { 
-            users[userIndex].streak_days = (users[userIndex].streak_days || 0) + 1;
-        } else if (typeof streakChange === 'number') { // Reset streak
-            users[userIndex].streak_days = streakChange; 
+        // Controleer of dit de eerste inzending van vandaag is
+        const lastSubmission = users[userIndex].last_submission_date 
+            ? new Date(users[userIndex].last_submission_date) 
+            : null;
+        const today = new Date();
+        const isNewDay = !lastSubmission || 
+            lastSubmission.getDate() !== today.getDate() || 
+            lastSubmission.getMonth() !== today.getMonth() || 
+            lastSubmission.getFullYear() !== today.getFullYear();
+        
+        // Voeg dagelijkse streak bonus toe als het een nieuwe dag is
+        if (isNewDay) {
+            const streakChange = calculateNewStreak(users[userIndex].last_submission_date);
+            if (streakChange === true) { 
+                users[userIndex].streak_days = (users[userIndex].streak_days || 0) + 1;
+                // Voeg bonuspunten toe voor de dagelijkse streak
+                if (users[userIndex].streak_days > 1) {
+                    pointsToAdd += POINTS_DAILY_STREAK * Math.min(Math.floor(users[userIndex].streak_days / 7) + 1, 4);
+                }
+            } else if (typeof streakChange === 'number') { // Reset streak
+                users[userIndex].streak_days = streakChange; 
+            }
         }
-        // If streakChange is false, means submitted today already, no change to streak_days count.
-
+        
+        // Voeg punten toe voor gallery plaatsing
+        if (imageUrl && transformedAiResult.ai_score >= GALLERY_MIN_AI_SCORE) {
+            pointsToAdd += POINTS_GALLERY;
+        }
+        
+        // Update het totaal aantal punten
+        users[userIndex].points = (users[userIndex].points || 0) + pointsToAdd;
         users[userIndex].last_submission_date = new Date().toISOString();
         users[userIndex].level = calculateUserLevel(users[userIndex].points);
         
+        // Update badges
         const currentBadges = new Set(users[userIndex].badges || []);
-        transformedAiResult.new_badges.forEach(badge => currentBadges.add(badge));
+        if (transformedAiResult && Array.isArray(transformedAiResult.new_badges)) {
+            transformedAiResult.new_badges.forEach(badge => currentBadges.add(badge));
+            users[userIndex].badges = Array.from(currentBadges);
+        }
+        
+        // Voeg eventuele niveau badges toe
+        const level = users[userIndex].level;
+        if (level >= 10 && !currentBadges.has('level_10')) {
+            currentBadges.add('level_10');
+        } else if (level >= 5 && !currentBadges.has('level_5')) {
+            currentBadges.add('level_5');
+        }
+        
         users[userIndex].badges = Array.from(currentBadges);
 
-        await writeData(USERS_FILE_PATH, users);
+    await writeData(USERS_FILE_PATH, users);
     }
 
     // Add to gallery if score is high enough
