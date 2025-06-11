@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Search, Filter, X, Clock, Calendar, Utensils, BarChart2, Loader } from 'react-feather';
+import { Camera, Search, Filter, X, Clock, Calendar, Coffee, BarChart2, Loader } from 'react-feather'; // Changed Utensils to Coffee
 import axios from 'axios';
 import { API } from '../config';
 import { format, parseISO, isToday, isYesterday, isThisWeek, isThisMonth } from 'date-fns';
@@ -251,7 +251,7 @@ const Gallery = () => {
                         <div>
                           <h3 className="text-lg font-medium text-gray-900">{entry.food_name}</h3>
                           <p className="text-sm text-gray-500 flex items-center mt-1">
-                            <Utensils className="h-4 w-4 mr-1 text-blue-500" />
+                            <Coffee className="h-4 w-4 mr-1 text-blue-500" />
                             {MEAL_TYPES[entry.meal_type] || entry.meal_type}
                             <span className="mx-2">•</span>
                             <Clock className="h-4 w-4 mr-1 text-blue-500" />
@@ -342,7 +342,7 @@ const Gallery = () => {
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900">{selectedEntry.food_name}</h2>
                   <p className="text-gray-500 flex items-center mt-1">
-                    <Utensils className="h-4 w-4 mr-1 text-blue-500" />
+                    <Coffee className="h-4 w-4 mr-1 text-blue-500" />
                     {MEAL_TYPES[selectedEntry.meal_type] || selectedEntry.meal_type}
                     <span className="mx-2">•</span>
                     <Clock className="h-4 w-4 mr-1 text-blue-500" />
