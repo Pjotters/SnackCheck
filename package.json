@@ -2,8 +2,8 @@
     "name": "frontend",
     "version": "0.1.0",
     "private": true,
-    "homepage": ".",
-    "publicUrl": ".",
+    "homepage": "/",
+    "publicUrl": "/",
     "engines": {
         "node": ">=20.0.0",
         "yarn": ">=1.22.19"
